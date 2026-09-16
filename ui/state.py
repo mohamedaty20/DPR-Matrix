@@ -22,10 +22,13 @@ def _bucket() -> dict:
     if _KEY not in store:
         store[_KEY] = {
             "docs": [], "report": None, "report_id": None,
-            "logs": [], "queue": [], "zones": {},
+            "logs": [], "queue": [], "zones": [],
+            "s_curve_targets": {}, "risk_cache": {},
         }
     store[_KEY].setdefault("queue", [])
-    store[_KEY].setdefault("zones", {})
+    store[_KEY].setdefault("zones", [])
+    store[_KEY].setdefault("s_curve_targets", {})
+    store[_KEY].setdefault("risk_cache", {})
     return store[_KEY]
 
 
