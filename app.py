@@ -7,9 +7,6 @@ def _log(msg: str) -> None:
 _log("python starting")
 _log(f"port from env: {os.environ.get('PORT', '(unset)')}")
 
-# ---------------------------------------------------------------------------
-# Import phase — log each step so a crash here is pinpointable
-# ---------------------------------------------------------------------------
 try:
     from nicegui import ui, app
     _log("imported nicegui")
@@ -32,6 +29,7 @@ try:
     from ui.pages.home import render as render_home
     from ui.pages.results import render as render_results
     from ui.pages.history import render as render_history
+    from ui.pages.reconcile import render as render_reconcile
     _log("imported ui + pages")
 except Exception as e:
     _log(f"FATAL: ui import failed: {type(e).__name__}: {e}")
@@ -51,9 +49,7 @@ except Exception as e:
 
 setup_logging(settings.LOG_LEVEL)
 
-# Silence the cosmetic "Timer cancelled because client is not connected"
-# warnings that fire 60 s after any browser tab closes. The timers are
-# per-page and the message is expected — nothing is actually wrong.
+# Silence the cosmetic "Timer cancelled because client is not connected" noise
 import logging as _logging
 
 class _TimerNoiseFilter(_logging.Filter):
@@ -71,12 +67,6 @@ apply_theme()
 _log("theme applied")
 
 
-# ---------------------------------------------------------------------------
-# Diagnostics
-#
-# NOTE: /test-gemini MUST stay on httpx REST. The google-generativeai SDK
-# uses gRPC and hangs silently under load — never re-introduce it here.
-# ---------------------------------------------------------------------------
 @app.get("/healthz")
 def healthz():
     return Response(content="ok", media_type="text/plain")
@@ -121,6 +111,11 @@ def index():
 @ui.page("/results")
 def results_page():
     render_results()
+
+
+@ui.page("/reconcile")
+def reconcile_page():
+    render_reconcile()
 
 
 @ui.page("/history")
