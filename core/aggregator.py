@@ -1,14 +1,11 @@
-"""Aggregation engine.
+"""Two-pass aggregator.
 
-Pass 1 — Gemini merges raw text into structured JSON.
-Pass 2 — deterministic Python post-processing:
-  • de-duplicate line items by (label, unit)
-  • attach source attribution
-  • detect header-level conflicts
-  • strip empties
+Pass 1 — Gemini extracts EACH file independently into the strict schema.
+Pass 2 — Python merges deterministically: normalize → group → sum.
 
-NOTE: LineItem and Conflict live in core/models.py — this module imports them.
-      Never re-define them here.
+The LLM never does the merge. It reads one file at a time and returns
+structured rows. All cross-file logic is Python, so it is auditable and
+reproducible.
 """
 from __future__ import annotations
 
@@ -18,151 +15,338 @@ import re
 from core.models import ExtractedDocument, AggregatedReport
 from core.gemini_client import generate_text
 from core.errors import GeminiError
+from core.normalize import (
+    norm_building, norm_floor, norm_activity, norm_unit,
+    to_float, fmt_num,
+)
 
 
-# ---------------------------------------------------------------------------
-# Prompt
-# ---------------------------------------------------------------------------
-_SYSTEM = """You are a senior construction DPR analyst.
-You will receive MULTIPLE site reports from the SAME day at the SAME project.
-Merge them into ONE canonical Daily Progress Report.
+# ═══════════════════════════════════════════════════════════════════════════
+# THE PROMPT — production-grade, with explicit rules and examples
+# ═══════════════════════════════════════════════════════════════════════════
+_SYSTEM = r"""You are extracting a Daily Progress Report (DPR) from ONE source document.
+The document may be a scanned page, a photo, an Excel export, or raw text.
+Read it carefully and return STRICT JSON — no prose, no markdown fences.
 
-Rules:
-1. De-duplicate: if the same equipment/person/material appears in multiple
-   reports, list it ONCE.
-2. Attribute: for every row, list which source files it came from.
-3. Flag conflicts: if two reports disagree (weather, personnel count,
-   progress %), record the discrepancy in "conflicts".
-4. Be literal: transcribe quantities, IDs, and names exactly.
-5. Never invent data. If a field is unknown, leave it empty.
+═══════════════════════════════════════════════════════════════════════
+CRITICAL RULES — READ EVERY ONE
+═══════════════════════════════════════════════════════════════════════
 
-Return STRICT JSON matching this schema — no prose, no markdown fences:
+RULE 1 — NEVER concatenate location + activity into one string.
+   GOOD: {"building":"70","floor":"4","activity":"Mortar works", ...}
+   BAD:  {"label":"Building No 70, Floor No 4 + 1 helper - Mortar works"}
+
+RULE 2 — Helper counts belong in the "helpers" field. NEVER in the floor.
+   Source: "Floor 4 + 1 helper"
+   ✓ building="70", floor="4", helpers=1
+   ✗ floor="4 + 1 helper"
+
+RULE 3 — Skilled workers and helpers are separate counters.
+   "10 workers + 3 helpers" → quantity=10, skilled=10, helpers=3, unit="workers"
+   "13 masons + 2 helpers"  → quantity=13, skilled=13, helpers=2, unit="workers"
+   "5 workers"              → quantity=5,  skilled=5,  helpers=0, unit="workers"
+   "4"                      → quantity=4,  skilled=4,  helpers=0, unit="workers"
+
+RULE 4 — Quantity and unit are separate fields.
+   "15 m²"      → quantity=15,  unit="m2"
+   "3 m³"       → quantity=3,   unit="m3"
+   "200 bags"   → quantity=200, unit="bags"
+
+RULE 5 — Building and floor are separate fields.
+   "Building No 53, Floor No 2" → building="53", floor="2"
+   "Bldg 59 - 3rd floor"        → building="59", floor="3"
+   "B-87 F3"                    → building="87", floor="3"
+
+RULE 6 — Normalize activity names to this controlled vocabulary:
+     Mortar works · Brickworks · Sealer works · Plastering · Painting
+     Tiling · Steel fixing · Concrete works · Formwork · Carpentry
+     Electrical · Plumbing
+   Map synonyms: "Mortaring"/"Masonry"→"Mortar works",
+                 "Brick laying"/"Bricklaying"→"Brickworks",
+                 "Sealing"→"Sealer works", etc.
+
+RULE 7 — ONE row per (building, floor, activity). If the document lists the
+   same combination twice, SUM the quantities and crews.
+
+RULE 8 — Never invent data. Missing field → empty string or 0.
+
+═══════════════════════════════════════════════════════════════════════
+OUTPUT SCHEMA — return ONLY this JSON object
+═══════════════════════════════════════════════════════════════════════
 
 {
   "project_name": "",
-  "report_date":  "YYYY-MM-DD or as written",
+  "report_date":  "",
   "site_location": "",
   "prepared_by":  "",
   "weather":      "",
-  "personnel_on_site": [{"label":"","quantity":"","unit":"","notes":"","sources":["file.pdf"]}],
-  "work_progress":     [{"label":"","quantity":"","unit":"","notes":"","sources":["file.pdf"]}],
-  "equipment":         [{"label":"","quantity":"","unit":"","notes":"","sources":["file.pdf"]}],
-  "materials":         [{"label":"","quantity":"","unit":"","notes":"","sources":["file.pdf"]}],
-  "hse_observations":  ["..."],
-  "quality_checks":    ["..."],
-  "issues_risks":      ["..."],
-  "next_day_plan":     ["..."],
-  "incidents":         "",
-  "conflicts":         [{"field":"","values":[],"sources":[]}]
+  "shift":        "",
+
+  "work_progress": [
+    {
+      "building": "53",
+      "floor":    "2",
+      "zone":     "",
+      "activity": "Mortar works",
+      "quantity": 5,
+      "unit":     "workers",
+      "skilled":  5,
+      "helpers":  3,
+      "progress_pct": "",
+      "notes":    ""
+    }
+  ],
+
+  "equipment": [
+    { "name":"", "model":"", "quantity":0, "status":"", "location":"", "notes":"" }
+  ],
+
+  "materials": [
+    { "name":"", "grade":"", "quantity":0, "unit":"", "location":"", "notes":"" }
+  ],
+
+  "personnel": [
+    { "trade":"", "count":0, "building":"", "notes":"" }
+  ],
+
+  "hse_observations": [],
+  "quality_checks":   [],
+  "issues_risks":     [],
+  "next_day_plan":    [],
+  "incidents":        ""
 }"""
 
 
-def _format_doc(d: ExtractedDocument) -> str:
-    body = d.raw_text[:14000]
-    return f"<<<FILE: {d.filename}>>>\n{body}\n<<<END>>>"
+def _prompt_for(doc: ExtractedDocument) -> str:
+    return f"{_SYSTEM}\n\nSOURCE FILENAME: {doc.filename}\n\nDOCUMENT CONTENT:\n{doc.raw_text[:30000]}"
 
 
-def _build_prompt(docs: list[ExtractedDocument]) -> str:
-    blocks = "\n\n".join(_format_doc(d) for d in docs)
-    filenames = ", ".join(d.filename for d in docs)
-    return (
-        f"{_SYSTEM}\n\n"
-        f"SOURCE FILES ({len(docs)}): {filenames}\n\n"
-        f"REPORTS:\n{blocks}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# JSON extraction — tolerant to fences and trailing prose
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
+# JSON extraction — tolerant to fences and prose
+# ═══════════════════════════════════════════════════════════════════════════
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL)
 
 
 def _extract_json(raw: str) -> dict:
     if not raw:
         raise GeminiError("Gemini returned an empty response.")
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-    m = _FENCE.search(raw)
-    if m:
+    for attempt in (
+        lambda: json.loads(raw),
+        lambda: json.loads(_FENCE.search(raw).group(1)) if _FENCE.search(raw) else None,
+        lambda: json.loads(raw[raw.find("{"):raw.rfind("}") + 1]),
+    ):
         try:
-            return json.loads(m.group(1))
-        except json.JSONDecodeError:
-            pass
-    start, end = raw.find("{"), raw.rfind("}")
-    if start != -1 and end > start:
-        try:
-            return json.loads(raw[start:end + 1])
-        except json.JSONDecodeError:
-            pass
+            v = attempt()
+            if isinstance(v, dict):
+                return v
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            continue
     raise GeminiError(f"Gemini returned non-JSON output ({len(raw)} chars).")
 
 
-# ---------------------------------------------------------------------------
-# Deterministic post-processing
-# ---------------------------------------------------------------------------
-def _norm_key(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "").strip().lower())
+# ═══════════════════════════════════════════════════════════════════════════
+# PASS 1 — per-file structured extraction
+# ═══════════════════════════════════════════════════════════════════════════
+def _extract_one(doc: ExtractedDocument) -> dict:
+    raw = generate_text(_prompt_for(doc), json_mode=True)
+    data = _extract_json(raw)
+
+    # Attach this document's filename to every row's sources
+    fn = doc.filename
+    for key in ("work_progress", "equipment", "materials", "personnel"):
+        for row in data.get(key, []):
+            if isinstance(row, dict):
+                row.setdefault("sources", [])
+                if fn not in row["sources"]:
+                    row["sources"].append(fn)
+    return data
 
 
-def _fmt_num(n: float) -> str:
-    return str(int(n)) if float(n).is_integer() else f"{n:.2f}".rstrip("0").rstrip(".")
+# ═══════════════════════════════════════════════════════════════════════════
+# PASS 2 — deterministic merge
+# ═══════════════════════════════════════════════════════════════════════════
+def _merge_work(rows: list[dict]) -> list[dict]:
+    """Group by (normalized building, floor, activity). Sum quantities & crews."""
+    groups: dict[tuple[str, str, str], dict] = {}
 
-
-def _dedupe_rows(rows: list[dict], source_file: str | None) -> list[dict]:
-    grouped: dict[tuple[str, str], dict] = {}
-
-    for r in rows or []:
+    for r in rows:
         if not isinstance(r, dict):
             continue
-        label = _norm_key(r.get("label", ""))
-        unit = _norm_key(r.get("unit", ""))
-        if not label:
+        b = norm_building(r.get("building", ""))
+        f = norm_floor(r.get("floor", ""))
+        a = norm_activity(r.get("activity", ""))
+        if a == "" and b == "?" and f == "?":
             continue
-        key = (label, unit)
+        key = (b, f, a)
 
-        sources = r.get("sources") or []
-        if isinstance(sources, str):
-            sources = [sources]
-        if source_file and source_file not in sources:
-            sources.append(source_file)
+        qty   = to_float(r.get("quantity")) or 0.0
+        sk    = to_float(r.get("skilled"))  or 0.0
+        hp    = to_float(r.get("helpers"))  or 0.0
+        unit  = norm_unit(r.get("unit", ""))
+        srcs  = r.get("sources") or []
+        if isinstance(srcs, str):
+            srcs = [srcs]
 
-        qty_raw = str(r.get("quantity", "") or "").strip()
-        try:
-            qty_num = float(re.sub(r"[^\d.\-]", "", qty_raw)) if qty_raw else None
-        except ValueError:
-            qty_num = None
-
-        if key not in grouped:
-            grouped[key] = {
-                "label": r.get("label", "").strip(),
-                "quantity": qty_raw,
-                "unit": r.get("unit", "").strip(),
-                "notes": r.get("notes", "").strip(),
-                "sources": list(dict.fromkeys(sources)),
-                "count": 1,
-                "_num": qty_num,
+        if key not in groups:
+            groups[key] = {
+                "building": b,
+                "floor":    f,
+                "zone":     r.get("zone", "").strip(),
+                "activity": a,
+                "quantity": qty,
+                "skilled":  sk,
+                "helpers":  hp,
+                "unit":     unit,
+                "progress_pct": r.get("progress_pct", "").strip(),
+                "notes":    [r.get("notes", "").strip()] if r.get("notes") else [],
+                "sources":  list(dict.fromkeys(srcs)),
             }
         else:
-            g = grouped[key]
-            if qty_num is not None and g["_num"] is not None:
-                g["_num"] += qty_num
-                g["quantity"] = _fmt_num(g["_num"])
-            elif qty_raw and not g["quantity"]:
-                g["quantity"] = qty_raw
-            if r.get("notes") and r["notes"] not in g["notes"]:
-                g["notes"] = (g["notes"] + " | " + r["notes"]).strip(" |")
-            for s in sources:
+            g = groups[key]
+            g["quantity"] += qty
+            g["skilled"]  += sk
+            g["helpers"]  += hp
+            if unit and not g["unit"]:
+                g["unit"] = unit
+            if r.get("notes") and r["notes"].strip() not in g["notes"]:
+                g["notes"].append(r["notes"].strip())
+            for s in srcs:
                 if s not in g["sources"]:
                     g["sources"].append(s)
-            g["count"] += 1
 
     out = []
-    for g in grouped.values():
-        g.pop("_num", None)
+    for g in groups.values():
+        g["quantity"] = fmt_num(g["quantity"])
+        g["skilled"]  = fmt_num(g["skilled"])
+        g["helpers"]  = fmt_num(g["helpers"])
+        g["notes"]    = " | ".join(g["notes"])
         out.append(g)
+
+    # Sort: building, floor, activity
+    def key_sort(x):
+        try:
+            b = int(x["building"])
+        except ValueError:
+            b = 10**9
+        try:
+            f = int(x["floor"])
+        except ValueError:
+            f = 10**9
+        return (b, f, x["activity"])
+    out.sort(key=key_sort)
+    return out
+
+
+def _merge_equipment(rows: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        name = (r.get("name") or "").strip()
+        model = (r.get("model") or "").strip()
+        if not name and not model:
+            continue
+        key = f"{name.lower()}|{model.lower()}"
+        srcs = r.get("sources") or []
+        if isinstance(srcs, str):
+            srcs = [srcs]
+        qty = to_float(r.get("quantity")) or 1.0
+        if key not in groups:
+            groups[key] = {
+                "name":     name,
+                "model":    model,
+                "quantity": qty,
+                "status":   (r.get("status") or "").strip(),
+                "location": (r.get("location") or "").strip(),
+                "notes":    [r.get("notes", "").strip()] if r.get("notes") else [],
+                "sources":  list(dict.fromkeys(srcs)),
+            }
+        else:
+            g = groups[key]
+            g["quantity"] += qty
+            if r.get("notes") and r["notes"].strip() not in g["notes"]:
+                g["notes"].append(r["notes"].strip())
+            for s in srcs:
+                if s not in g["sources"]:
+                    g["sources"].append(s)
+    out = []
+    for g in groups.values():
+        g["quantity"] = fmt_num(g["quantity"])
+        g["notes"] = " | ".join(g["notes"])
+        out.append(g)
+    return out
+
+
+def _merge_materials(rows: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        name = (r.get("name") or "").strip()
+        grade = (r.get("grade") or "").strip()
+        if not name:
+            continue
+        key = f"{name.lower()}|{grade.lower()}"
+        unit = norm_unit(r.get("unit", ""))
+        qty = to_float(r.get("quantity")) or 0.0
+        srcs = r.get("sources") or []
+        if isinstance(srcs, str):
+            srcs = [srcs]
+        if key not in groups:
+            groups[key] = {
+                "name": name, "grade": grade, "quantity": qty, "unit": unit,
+                "location": (r.get("location") or "").strip(),
+                "notes": [r.get("notes","").strip()] if r.get("notes") else [],
+                "sources": list(dict.fromkeys(srcs)),
+            }
+        else:
+            g = groups[key]
+            if unit and g["unit"] == unit:
+                g["quantity"] += qty
+            if r.get("notes") and r["notes"].strip() not in g["notes"]:
+                g["notes"].append(r["notes"].strip())
+            for s in srcs:
+                if s not in g["sources"]:
+                    g["sources"].append(s)
+    out = []
+    for g in groups.values():
+        g["quantity"] = fmt_num(g["quantity"])
+        g["notes"] = " | ".join(g["notes"])
+        out.append(g)
+    return out
+
+
+def _merge_personnel(rows: list[dict]) -> list[dict]:
+    groups: dict[str, dict] = {}
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        trade = (r.get("trade") or "").strip().title()
+        if not trade:
+            continue
+        count = to_float(r.get("count")) or 0.0
+        srcs = r.get("sources") or []
+        if isinstance(srcs, str):
+            srcs = [srcs]
+        if trade not in groups:
+            groups[trade] = {
+                "trade": trade, "count": count,
+                "building": (r.get("building") or "").strip(),
+                "notes": [r.get("notes","").strip()] if r.get("notes") else [],
+                "sources": list(dict.fromkeys(srcs)),
+            }
+        else:
+            g = groups[trade]
+            g["count"] += count
+            for s in srcs:
+                if s not in g["sources"]:
+                    g["sources"].append(s)
+    out = []
+    for g in groups.values():
+        g["count"] = fmt_num(g["count"])
+        g["notes"] = " | ".join(g["notes"])
+        out.append(g)
+    out.sort(key=lambda x: x["trade"])
     return out
 
 
@@ -170,83 +354,82 @@ def _clean_strings(items: list) -> list[str]:
     seen, out = set(), []
     for it in items or []:
         s = str(it).strip()
-        k = _norm_key(s)
-        if s and k not in seen:
-            seen.add(k); out.append(s)
+        if s and s.lower() not in seen:
+            seen.add(s.lower()); out.append(s)
     return out
 
 
-def _detect_header_conflicts(raw: dict, docs: list[ExtractedDocument]) -> list[dict]:
-    conflicts = list(raw.get("conflicts") or [])
-    for f in ("weather", "prepared_by", "site_location", "report_date"):
-        vals = set()
-        for d in docs:
-            v = (d.meta.get(f) or "").strip()
-            if v:
-                vals.add(v)
-        if len(vals) > 1:
-            conflicts.append({
-                "field": f,
-                "values": sorted(vals),
-                "sources": [d.filename for d in docs],
-            })
-
-    seen, clean = set(), []
-    for c in conflicts:
-        if not isinstance(c, dict):
-            continue
-        key = (c.get("field", ""), tuple(sorted(c.get("values", []))))
-        if key in seen:
-            continue
-        seen.add(key); clean.append(c)
-    return clean
-
-
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
 # Public API
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
 def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
     if not docs:
         raise GeminiError("No documents to aggregate.")
 
-    prompt = _build_prompt(docs)
+    # Pass 1 — extract each file independently
+    per_file: list[dict] = []
+    for d in docs:
+        try:
+            per_file.append(_extract_one(d))
+        except Exception as e:
+            per_file.append({"_error": f"{d.filename}: {type(e).__name__}: {e}"})
 
-    try:
-        raw = generate_text(prompt, json_mode=True)
-        data = _extract_json(raw)
-    except GeminiError:
-        raise
-    except Exception as e:
-        raise GeminiError(f"Aggregation call failed: {e}") from e
+    # Collect rows
+    work_rows   = []
+    equip_rows  = []
+    mat_rows    = []
+    pers_rows   = []
+    hse, qc, risks, plan = [], [], [], []
+    incidents_parts = []
+    header: dict = {}
 
-    single_source = docs[0].filename if len(docs) == 1 else None
+    for data in per_file:
+        if "_error" in data:
+            continue
+        for r in data.get("work_progress", []) or []: work_rows.append(r)
+        for r in data.get("equipment", [])     or []: equip_rows.append(r)
+        for r in data.get("materials", [])     or []: mat_rows.append(r)
+        for r in data.get("personnel", [])     or []: pers_rows.append(r)
+        hse   += data.get("hse_observations") or []
+        qc    += data.get("quality_checks")   or []
+        risks += data.get("issues_risks")     or []
+        plan  += data.get("next_day_plan")    or []
+        if data.get("incidents"):
+            incidents_parts.append(str(data["incidents"]).strip())
+        # take first non-empty header value
+        for k in ("project_name", "report_date", "site_location",
+                  "prepared_by", "weather", "shift"):
+            if not header.get(k) and data.get(k):
+                header[k] = data[k]
 
+    # Pass 2 — deterministic merge
     report = AggregatedReport(
-        project_name  = (data.get("project_name") or "").strip(),
-        report_date   = (data.get("report_date")  or "").strip(),
-        site_location = (data.get("site_location") or "").strip(),
-        prepared_by   = (data.get("prepared_by")  or "").strip(),
-        weather       = (data.get("weather")      or "").strip(),
-        personnel_on_site = _dedupe_rows(data.get("personnel_on_site"), single_source),
-        work_progress     = _dedupe_rows(data.get("work_progress"),     single_source),
-        equipment         = _dedupe_rows(data.get("equipment"),         single_source),
-        materials         = _dedupe_rows(data.get("materials"),         single_source),
-        hse_observations  = _clean_strings(data.get("hse_observations")),
-        quality_checks    = _clean_strings(data.get("quality_checks")),
-        issues_risks      = _clean_strings(data.get("issues_risks")),
-        next_day_plan     = _clean_strings(data.get("next_day_plan")),
-        incidents         = (data.get("incidents") or "").strip(),
-        source_files      = [d.filename for d in docs],
-        conflicts         = _detect_header_conflicts(data, docs),
+        project_name  = header.get("project_name", ""),
+        report_date   = header.get("report_date", ""),
+        site_location = header.get("site_location", ""),
+        prepared_by   = header.get("prepared_by", ""),
+        weather       = header.get("weather", ""),
+        shift         = header.get("shift", ""),
+        work_progress = _merge_work(work_rows),
+        equipment     = _merge_equipment(equip_rows),
+        materials     = _merge_materials(mat_rows),
+        personnel     = _merge_personnel(pers_rows),
+        hse_observations = _clean_strings(hse),
+        quality_checks   = _clean_strings(qc),
+        issues_risks     = _clean_strings(risks),
+        next_day_plan    = _clean_strings(plan),
+        incidents        = " | ".join(incidents_parts),
+        source_files     = [d.filename for d in docs],
     )
 
     report.notes.append(
-        f"Merged {len(docs)} file(s); "
-        f"{sum(len(getattr(report, f)) for f in (
-            'work_progress','equipment','materials','personnel_on_site'
-        ))} structured rows after de-duplication."
+        f"Merged {len(docs)} file(s) into "
+        f"{len(report.work_progress)} work rows, "
+        f"{len(report.equipment)} equipment rows, "
+        f"{len(report.materials)} material rows, "
+        f"{len(report.personnel)} personnel rows."
     )
-    if report.conflicts:
-        report.notes.append(f"{len(report.conflicts)} conflict(s) flagged.")
-
+    failed = [d for d in per_file if "_error" in d]
+    if failed:
+        report.notes.append(f"{len(failed)} file(s) failed extraction.")
     return report
