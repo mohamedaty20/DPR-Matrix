@@ -387,3 +387,234 @@ def top_list(items: list[tuple[str, str | int]], *, start: int = 1) -> None:
             f'</div>'
         )
     ui.html(f'<div class="dpr-toplist">{rows}</div>').classes("w-full")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Pass 11 — Line chart (SVG) + Risk forecast card
+# ═══════════════════════════════════════════════════════════════════════════
+
+def line_chart(
+    title: str,
+    series: list[dict],
+    *,
+    subtitle: str = "",
+    x_labels: list[str] | None = None,
+    height: int = 260,
+) -> None:
+    """
+    series: [{"name": str, "color": str, "points": [float|None, ...]}, ...]
+    All series must be the same length. x_labels optional.
+    """
+    if not series or not series[0].get("points"):
+        ui.html('<div class="dpr-panel-empty">No data to chart.</div>')
+        return
+
+    n = len(series[0]["points"])
+    all_vals = [v for s in series for v in s["points"] if v is not None]
+    if not all_vals:
+        ui.html('<div class="dpr-panel-empty">No data to chart.</div>')
+        return
+
+    y_max = max(all_vals) or 1
+    W, H = 900, height
+    pad_l, pad_r, pad_t, pad_b = 56, 24, 20, 44
+    inner_w = W - pad_l - pad_r
+    inner_h = H - pad_t - pad_b
+
+    def x_coord(i: int) -> float:
+        if n == 1:
+            return pad_l + inner_w / 2
+        return pad_l + (i / (n - 1)) * inner_w
+
+    def y_coord(v: float) -> float:
+        return pad_t + inner_h - (v / y_max) * inner_h
+
+    # Grid + Y axis labels
+    grid = ""
+    for i in range(5):
+        y = pad_t + (i / 4) * inner_h
+        val = y_max * (1 - i / 4)
+        grid += (
+            f'<line x1="{pad_l}" y1="{y:.1f}" x2="{pad_l + inner_w}" y2="{y:.1f}" '
+            f'stroke="rgba(34,197,94,0.10)" stroke-width="1"/>'
+            f'<text x="{pad_l - 8}" y="{y + 3:.1f}" text-anchor="end" '
+            f'fill="#85858c" font-size="10" font-family="monospace">'
+            f'{int(val) if val == int(val) else f"{val:.1f}"}</text>'
+        )
+
+    # X axis labels
+    x_axis = ""
+    if x_labels:
+        step = max(1, len(x_labels) // 10)
+        for i in range(0, len(x_labels), step):
+            x = x_coord(i)
+            x_axis += (
+                f'<text x="{x:.1f}" y="{pad_t + inner_h + 18}" '
+                f'text-anchor="middle" fill="#85858c" font-size="10" '
+                f'font-family="monospace">{escape(str(x_labels[i]))}</text>'
+            )
+
+    # Series
+    paths = ""
+    legend = ""
+    for s in series:
+        pts = s.get("points", [])
+        color = s.get("color", "#22c55e")
+        d_cmd = ""
+        for i, v in enumerate(pts):
+            if v is None:
+                continue
+            x, y = x_coord(i), y_coord(v)
+            d_cmd += ("M" if d_cmd == "" else " L") + f"{x:.1f},{y:.1f}"
+        if d_cmd:
+            paths += (
+                f'<path d="{d_cmd}" fill="none" stroke="{color}" '
+                f'stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+            )
+        for i, v in enumerate(pts):
+            if v is None:
+                continue
+            x, y = x_coord(i), y_coord(v)
+            paths += (
+                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.8" fill="{color}"/>'
+            )
+        legend += (
+            f'<span style="display:inline-flex;align-items:center;gap:6px;'
+            f'color:#85858c;font-size:11px;margin-right:14px;">'
+            f'<span style="width:14px;height:2px;background:{color};'
+            f'display:inline-block;"></span>{escape(s.get("name",""))}</span>'
+        )
+
+    sub_html = (
+        f'<div class="dpr-panel-sub">{escape(subtitle)}</div>'
+        if subtitle else ""
+    )
+
+    ui.html(
+        f'<div class="dpr-panel" style="grid-column: 1 / -1;">'
+        f'  <div class="dpr-panel-header">'
+        f'    <div class="dpr-panel-title">{escape(title)}</div>'
+        f'  </div>'
+        f'  {sub_html}'
+        f'  <div style="margin-bottom:10px;">{legend}</div>'
+        f'  <svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet" '
+        f'       style="width:100%;height:{H}px;display:block;">'
+        f'    {grid}{x_axis}{paths}'
+        f'  </svg>'
+        f'</div>'
+    ).classes("w-full")
+
+
+_SEV_COLOR = {"high": "#ff4d6a", "medium": "#ffb020", "low": "#22c55e"}
+
+
+def risk_forecast(data: dict) -> None:
+    """Render the AI risk forecast card."""
+    if not data:
+        ui.html('<div class="dpr-panel-empty">No risk analysis yet.</div>')
+        return
+
+    overall = data.get("overall_risk", "insufficient_data")
+    summary = data.get("summary", "")
+    risks = data.get("risks", [])
+    bottlenecks = data.get("bottlenecks", [])
+
+    overall_color = _SEV_COLOR.get(overall, "#4f4f56")
+    if overall == "insufficient_data":
+        overall_color = "#85858c"
+
+    header = (
+        f'<div class="dpr-panel-header">'
+        f'  <div class="dpr-panel-title">Risk &amp; Bottleneck Forecast</div>'
+        f'  <div class="dpr-panel-total" style="color:{overall_color} !important;">'
+        f'    {escape(overall.upper().replace("_", " "))}'
+        f'  </div>'
+        f'</div>'
+    )
+
+    summary_html = ""
+    if summary:
+        summary_html = (
+            f'<div style="color:#e8e8ea;font-size:12.5px;line-height:1.55;'
+            f'margin:6px 0 16px 0;padding:10px 12px;background:rgba(34,197,94,0.04);'
+            f'border-left:2px solid {overall_color};border-radius:0 6px 6px 0;">'
+            f'{escape(summary)}</div>'
+        )
+
+    risks_html = ""
+    for r in risks:
+        sev = r.get("severity", "low")
+        color = _SEV_COLOR.get(sev, "#85858c")
+        cat = escape(r.get("category", "").upper())
+        title = escape(r.get("title", ""))
+        detail = escape(r.get("detail", ""))
+        evidence = escape(r.get("evidence", ""))
+        reco = escape(r.get("recommendation", ""))
+        risks_html += (
+            f'<div style="border:1px solid rgba(34,197,94,0.12);'
+            f'border-left:3px solid {color};'
+            f'border-radius:8px;padding:12px 14px;margin-bottom:10px;'
+            f'background:rgba(255,255,255,0.015);">'
+            f'  <div style="display:flex;align-items:center;gap:10px;'
+            f'      margin-bottom:6px;flex-wrap:wrap;">'
+            f'    <span style="background:{color}22;color:{color};'
+            f'        border:1px solid {color};padding:1px 7px;'
+            f'        border-radius:999px;font-size:9.5px;font-weight:700;'
+            f'        letter-spacing:0.08em;">{cat}</span>'
+            f'    <span style="color:#e8e8ea;font-size:13px;font-weight:600;">'
+            f'      {title}</span>'
+            f'    <span style="color:#4f4f56;font-size:10px;'
+            f'        margin-left:auto;font-weight:600;text-transform:uppercase;'
+            f'        letter-spacing:0.08em;">{escape(sev)}</span>'
+            f'  </div>'
+            f'  <div style="color:#c8c8cc;font-size:11.5px;line-height:1.55;'
+            f'      margin-bottom:8px;">{detail}</div>'
+            + (f'<div style="color:#85858c;font-size:11px;line-height:1.5;'
+               f'      margin-bottom:6px;">'
+               f'<strong style="color:#4f4f56;">Evidence:</strong> {evidence}</div>'
+               if evidence else "")
+            + (f'<div style="color:#a8e5c0;font-size:11.5px;line-height:1.5;'
+               f'      padding:8px 10px;background:rgba(34,197,94,0.06);'
+               f'      border-radius:6px;">'
+               f'<strong style="color:#22c55e;">→</strong> {reco}</div>'
+               if reco else "")
+            + '</div>'
+        )
+
+    bottleneck_html = ""
+    if bottlenecks:
+        items = ""
+        for b in bottlenecks:
+            items += (
+                f'<div class="dpr-toplist-row">'
+                f'  <span class="dpr-toplist-rank">•</span>'
+                f'  <span class="dpr-toplist-name">'
+                f'    B{escape(str(b.get("building","")))} · '
+                f'    {escape(str(b.get("activity","")))}</span>'
+                f'  <span style="color:#ffb020;font-size:11px;">'
+                f'    {escape(b.get("reason",""))}</span>'
+                f'</div>'
+            )
+        bottleneck_html = (
+            f'<div style="margin-top:16px;">'
+            f'  <div style="color:#85858c;font-size:10.5px;letter-spacing:0.12em;'
+            f'      text-transform:uppercase;font-weight:600;margin-bottom:8px;">'
+            f'    Bottleneck Zones</div>'
+            f'  <div class="dpr-toplist">{items}</div>'
+            f'</div>'
+        )
+
+    if not risks and not bottlenecks and overall != "insufficient_data":
+        risks_html = (
+            '<div class="dpr-panel-empty">'
+            'No risks flagged in the last 7 days.</div>'
+        )
+
+    ui.html(
+        f'<div class="dpr-panel dpr-panel-wide">'
+        f'  {header}'
+        f'  {summary_html}'
+        f'  {risks_html}'
+        f'  {bottleneck_html}'
+        f'</div>'
+    ).classes("w-full")
