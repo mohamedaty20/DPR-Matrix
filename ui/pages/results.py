@@ -7,21 +7,32 @@ def render():
     ui.label("Aggregated Report").classes("text-4xl font-bold dpr-title")
     ui.separator()
 
+    rpt = state.report()
+
+    if rpt is None:
+        with ui.card().classes("w-full"):
+            ui.label("⚠  No report in this session.").classes("dpr-title text-xl")
+            ui.label(
+                "Either aggregation failed, or this tab reloaded and cleared state. "
+                "Go back to Upload, add files, and click Aggregate Reports."
+            ).classes("text-white")
+        with ui.row().classes("gap-3 mt-4"):
+            ui.button("Back to Upload", on_click=lambda: ui.navigate.to("/"))
+        return
+
     with ui.card().classes("w-full"):
         section_title("Preview")
         report_preview()
 
-    if state.report() is not None:
-        with ui.card().classes("w-full"):
-            section_title("3 · Export")
-            with ui.row().classes("gap-3"):
-                ui.button("Download PDF", on_click=_download_pdf)
-                ui.button("Download Excel", on_click=_download_excel)
-                ui.button("Download TXT", on_click=_download_txt)
+    with ui.card().classes("w-full"):
+        section_title("Export")
+        with ui.row().classes("gap-3"):
+            ui.button("Download PDF",   on_click=_download_pdf)
+            ui.button("Download Excel", on_click=_download_excel)
+            ui.button("Download TXT",   on_click=_download_txt)
 
     with ui.row().classes("gap-3 mt-4"):
-        ui.button("Back to Upload", on_click=lambda: ui.navigate.to("/"))
-        ui.button("Refresh", on_click=lambda: ui.navigate.to("/results"))
+        ui.button("New Session", on_click=_new_session)
 
 
 def _download_pdf():
@@ -37,3 +48,8 @@ def _download_excel():
 def _download_txt():
     from core.exporters.txt_exporter import export_txt
     ui.download(export_txt(state.report()).encode("utf-8"), "DPR_Report.txt")
+
+
+def _new_session():
+    state.reset()
+    ui.navigate.to("/")
