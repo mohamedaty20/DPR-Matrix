@@ -366,13 +366,40 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   border-radius: var(--dpr-radius);
   padding: 16px 18px;
 }
+.dpr-chart-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
 .dpr-chart-title {
-  color: var(--dpr-text-muted) !important;
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  color: var(--dpr-text) !important;
+  font-size: 13px;
   font-weight: 600;
-  margin-bottom: 14px;
+  letter-spacing: -0.005em;
+}
+.dpr-chart-total {
+  color: var(--dpr-primary) !important;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.dpr-chart-total-label {
+  color: var(--dpr-text-dim) !important;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  margin-left: 4px;
+}
+.dpr-chart-subtitle {
+  color: var(--dpr-text-dim) !important;
+  font-size: 11px;
+  line-height: 1.55;
+  margin-bottom: 16px;
+  max-width: 340px;
 }
 .dpr-bar-chart {
   display: flex;
@@ -381,7 +408,7 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 }
 .dpr-bar-row {
   display: grid;
-  grid-template-columns: 110px 1fr 56px;
+  grid-template-columns: 110px 1fr 70px;
   align-items: center;
   gap: 10px;
   font-size: 12px;
@@ -411,6 +438,18 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   text-align: right;
   font-weight: 600;
 }
+.dpr-bar-value .dpr-bar-pct {
+  color: var(--dpr-text-dim) !important;
+  font-weight: 400;
+  margin-left: 6px;
+  font-size: 10.5px;
+}
+.dpr-chart-empty {
+  color: var(--dpr-text-dim) !important;
+  font-size: 12px;
+  padding: 8px 0;
+  font-style: italic;
+}
 
 /* ── Download bar ─────────────────────────────────────────────────── */
 .dpr-download-bar {
@@ -438,6 +477,15 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   display: block;
   margin-top: 3px;
   font-size: 11px;
+}
+
+/* ── Section header (title + subtitle) ────────────────────────────── */
+.dpr-section-subtitle {
+  color: var(--dpr-text-muted) !important;
+  font-size: 11.5px;
+  line-height: 1.55;
+  margin: 4px 0 14px 0;
+  max-width: 640px;
 }
 </style>
 """
