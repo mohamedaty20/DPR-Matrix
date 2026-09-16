@@ -37,7 +37,7 @@ def export_txt(report: AggregatedReport) -> str:
             L.append(f"  • {_fmt(it)}")
         L.append("")
 
-    bullet("Personnel on Site", report.personnel_on_site)
+    bullet("Personnel", report.personnel)
     bullet("Work Progress", report.work_progress)
     bullet("Equipment", report.equipment)
     bullet("Materials", report.materials)
