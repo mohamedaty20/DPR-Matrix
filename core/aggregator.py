@@ -365,6 +365,7 @@ def _clean_strings(items: list) -> list[str]:
 # Public API
 # ═══════════════════════════════════════════════════════════════════════════
 def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
+    print(f"[agg] starting aggregate with {len(docs)} doc(s)", flush=True)
     if not docs:
         raise GeminiError("No documents to aggregate.")
 
@@ -405,6 +406,7 @@ def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
                 header[k] = data[k]
 
     # Pass 2 — deterministic merge
+    print(f"[agg] pass 1 done; merging {len(work_rows)} work rows …", flush=True)
     report = AggregatedReport(
         project_name  = header.get("project_name", ""),
         report_date   = header.get("report_date", ""),
