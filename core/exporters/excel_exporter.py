@@ -80,7 +80,10 @@ def _write_list_sheet(ws, title: str, items: list):
         r += 1
         for it in items:
             for ci, k in enumerate(keys, start=1):
-                c = ws.cell(r, ci, it.get(k, "") or "")
+                v = it.get(k, "") or ""
+                if isinstance(v, list):
+                    v = ", ".join(str(x) for x in v)
+                c = ws.cell(r, ci, v)
                 c.font = _BODY_FONT; c.border = _BORDER
                 c.alignment = Alignment(wrap_text=True, vertical="top")
             r += 1
