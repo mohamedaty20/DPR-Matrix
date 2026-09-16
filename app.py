@@ -30,6 +30,7 @@ try:
     from ui.pages.results import render as render_results
     from ui.pages.history import render as render_history
     from ui.pages.reconcile import render as render_reconcile
+    from ui.pages.zones import render as render_zones
     _log("imported ui + pages")
 except Exception as e:
     _log(f"FATAL: ui import failed: {type(e).__name__}: {e}")
@@ -49,7 +50,6 @@ except Exception as e:
 
 setup_logging(settings.LOG_LEVEL)
 
-# Silence the cosmetic "Timer cancelled because client is not connected" noise
 import logging as _logging
 
 class _TimerNoiseFilter(_logging.Filter):
@@ -74,26 +74,20 @@ def healthz():
 
 @app.get("/test-gemini")
 def test_gemini():
-    """Direct httpx REST call to Gemini with a hard 30s timeout."""
     import httpx, time
     from config import settings
-
     model = settings.GEMINI_MODEL
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     body = {"contents": [{"role": "user", "parts": [{"text": "Reply with the single word: OK"}]}]}
     headers = {"Content-Type": "application/json", "x-goog-api-key": settings.GEMINI_API_KEY}
-
     t0 = time.time()
     try:
         r = httpx.post(url, json=body, headers=headers, timeout=30.0)
-        elapsed = time.time() - t0
         return Response(
-            content=(
-                f"model: {model}\n"
-                f"elapsed: {elapsed:.2f}s\n"
-                f"status: {r.status_code}\n\n"
-                f"body:\n{r.text[:1500]}"
-            ),
+            content=(f"model: {model}\n"
+                     f"elapsed: {time.time()-t0:.2f}s\n"
+                     f"status: {r.status_code}\n\n"
+                     f"body:\n{r.text[:1500]}"),
             media_type="text/plain",
         )
     except Exception as e:
@@ -118,6 +112,11 @@ def reconcile_page():
     render_reconcile()
 
 
+@ui.page("/zones")
+def zones_page():
+    render_zones()
+
+
 @ui.page("/history")
 def history_page():
     render_history()
@@ -139,7 +138,6 @@ def _safe_init_db() -> None:
 
 if __name__ in {"__main__", "__mp_main__"}:
     _safe_init_db()
-
     _log("about to call ui.run()")
     try:
         ui.run(
