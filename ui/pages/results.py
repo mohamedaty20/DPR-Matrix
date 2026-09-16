@@ -7,6 +7,7 @@ from nicegui import ui
 
 from core import analytics as A
 from core import quality as Q
+from core import anomaly as AN
 from ui import state
 from ui.shell import page_shell
 from ui.components import (
@@ -79,6 +80,91 @@ def _download_row(*, prominent: bool = False) -> None:
             ui.button("Download TXT",   on_click=_download_txt)
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Coverage panel body
+# ═══════════════════════════════════════════════════════════════════════════
+def _render_coverage(report) -> None:
+    cov = AN.compute_coverage(report)
+    rows = cov["fields"]
+    if not rows:
+        ui.html('<div class="dpr-panel-empty">No rows to measure.</div>')
+        return
+
+    html = '<div class="dpr-bars">'
+    for f in rows:
+        pct = f["pct"]
+        tone = "#22c55e" if pct >= 75 else "#ffb020" if pct >= 40 else "#ff4d6a"
+        html += (
+            f'<div class="dpr-bar-row">'
+            f'  <span class="dpr-bar-label">{f["label"]}</span>'
+            f'  <div class="dpr-bar-track">'
+            f'    <div class="dpr-bar-fill" '
+            f'         style="width:{pct:.1f}%;background:{tone};"></div>'
+            f'  </div>'
+            f'  <span class="dpr-bar-value">{f["count"]}/{f["total"]}'
+            f'    <span class="dpr-bar-pct">{pct:.0f}%</span></span>'
+            f'</div>'
+        )
+    html += "</div>"
+
+    missing = cov.get("missing_buildings") or []
+    if missing:
+        html += (
+            f'<div style="margin-top:16px;padding-top:14px;'
+            f'border-top:1px solid var(--dpr-border);">'
+            f'  <div style="color:#ffb020;font-size:11.5px;font-weight:600;">'
+            f'    ⚠ Buildings in personnel but not in work progress: '
+            f'{", ".join(missing)}</div>'
+            f'</div>'
+        )
+    ui.html(html).classes("w-full")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Anomaly panel body
+# ═══════════════════════════════════════════════════════════════════════════
+def _render_anomalies(anomalies: list[dict]) -> None:
+    if not anomalies:
+        ui.html('<div class="dpr-panel-empty">'
+                'No statistical anomalies detected.</div>')
+        return
+
+    html = '<div class="dpr-toplist">'
+    for a in anomalies:
+        b = a.get("building", "")
+        f = a.get("floor", "")
+        act = a.get("activity", "")
+        loc_bits = [x for x in (f"B{b}" if b else "",
+                                f"F{f}" if f else "",
+                                act) if x]
+        loc = " · ".join(loc_bits) or "—"
+        sev = a.get("severity", "soft")
+        dot = (
+            '<span class="dpr-ratio-dot" style="background:#ffb020"></span>'
+            if sev == "soft" else
+            '<span class="dpr-ratio-dot" style="background:#ff4d6a"></span>'
+        )
+        html += (
+            f'<div class="dpr-toplist-row" style="flex-direction:column;'
+            f'align-items:flex-start;gap:4px;">'
+            f'  <div style="display:flex;align-items:center;gap:8px;width:100%;">'
+            f'    {dot}'
+            f'    <span class="dpr-toplist-name" style="flex:1;">{loc}</span>'
+            f'    <span class="dpr-toplist-value" '
+            f'          style="color:#ffb020;">'
+            f'{a.get("type","").replace("_"," ").title()}</span>'
+            f'  </div>'
+            f'  <div style="color:#85858c;font-size:11px;padding-left:18px;">'
+            f'{a.get("reason","")}</div>'
+            f'</div>'
+        )
+    html += "</div>"
+    ui.html(html).classes("w-full")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Main
+# ═══════════════════════════════════════════════════════════════════════════
 def render():
     rpt = state.report()
     title = "Report Dashboard"
@@ -92,8 +178,8 @@ def render():
             _empty()
             return
 
-        # Compute quality first
         q = Q.compute_quality(rpt)
+        anomalies = AN.detect_anomalies(rpt)
 
         # ── Metadata ──────────────────────────────────────────────────
         metadata_strip([
@@ -107,7 +193,18 @@ def render():
 
         _download_row(prominent=True)
 
-        # ── Compute analytics ─────────────────────────────────────────
+        # ── Link to reconcile ─────────────────────────────────────────
+        with ui.row().classes("gap-2 items-center mt-1"):
+            ui.button(
+                "Reconcile Sources →",
+                on_click=lambda: ui.navigate.to("/reconcile"),
+            ).classes("dpr-btn-primary")
+            ui.label(
+                f"{len(rpt.reconciliation)} merged key(s) with "
+                f"per-source breakdown"
+            ).classes("dpr-muted")
+
+        # ── Analytics ─────────────────────────────────────────────────
         mp    = A.manpower(rpt)
         act   = A.activities(rpt)
         prog  = A.progress(rpt)
@@ -124,90 +221,58 @@ def render():
             else "danger"
         )
         stat_grid([
-            {
-                "label": "Data Quality",
-                "value": q.grade,
-                "sub":   f"score {q.score}/100",
-                "tone":  grade_tone,
-            },
-            {
-                "label": "Source Files",
-                "value": len(rpt.source_files),
-                "sub":   "merged into this report",
-            },
-            {
-                "label": "Active Tasks",
-                "value": len(rpt.work_progress),
-                "sub":   f"{A.fmt_count(mp.buildings_with_crew)} building(s) · "
-                         f"{act.distinct} activities",
-            },
-            {
-                "label": "Total Manpower",
-                "value": A.fmt_count(mp.total),
-                "sub":   f"{mp.skilled} skilled · {mp.helpers} helpers",
-            },
-            {
-                "label": "Avg Progress",
-                "value": A.fmt_pct(prog.avg_pct) if prog.reported else "—",
-                "sub":   (f"{prog.reported}/{prog.total_rows} rows reported"
-                          if prog.reported else "no progress values"),
-            },
-            {
-                "label": "Conflicts",
-                "value": f"{q.n_hard}H · {q.n_soft}S",
-                "sub":   ("hard needs review"
-                          if q.n_hard else "no hard conflicts"),
-                "tone":  "danger" if q.n_hard else "primary",
-            },
+            {"label": "Data Quality", "value": q.grade,
+             "sub": f"score {q.score}/100", "tone": grade_tone},
+            {"label": "Source Files", "value": len(rpt.source_files),
+             "sub": "merged into this report"},
+            {"label": "Active Tasks", "value": len(rpt.work_progress),
+             "sub": f"{A.fmt_count(mp.buildings_with_crew)} building(s) · "
+                    f"{act.distinct} activities"},
+            {"label": "Total Manpower", "value": A.fmt_count(mp.total),
+             "sub": f"{mp.skilled} skilled · {mp.helpers} helpers"},
+            {"label": "Avg Progress",
+             "value": A.fmt_pct(prog.avg_pct) if prog.reported else "—",
+             "sub": (f"{prog.reported}/{prog.total_rows} rows reported"
+                     if prog.reported else "no progress values")},
+            {"label": "Anomalies", "value": len(anomalies),
+             "sub": "statistical outliers detected" if anomalies
+                    else "none flagged",
+             "tone": "warning" if anomalies else "primary"},
         ])
 
-        # ── Row 1: manpower + activities ──────────────────────────────
+        # ── Row 1 ─────────────────────────────────────────────────────
         with ui.element("div").classes("dpr-grid"):
-            with panel(
-                "Manpower by Building",
-                subtitle="Skilled + helper headcount per building.",
-                total=A.fmt_count(mp.total),
-                total_label="workers",
-            ):
+            with panel("Manpower by Building",
+                       subtitle="Skilled + helper headcount per building.",
+                       total=A.fmt_count(mp.total), total_label="workers"):
                 if mp.by_building:
                     bar_list(mp.by_building[:10], show_pct=True)
                 else:
-                    ui.html('<div class="dpr-panel-empty">'
-                            'No manpower recorded.</div>')
+                    ui.html('<div class="dpr-panel-empty">No manpower.</div>')
 
-            with panel(
-                "Activity Breakdown",
-                subtitle="Number of building & floor locations per activity.",
-                total=A.fmt_count(act.total_locations),
-                total_label="locations",
-            ):
+            with panel("Activity Breakdown",
+                       subtitle="Locations per activity.",
+                       total=A.fmt_count(act.total_locations),
+                       total_label="locations"):
                 if act.by_activity:
                     bar_list(act.by_activity[:10], show_pct=True)
                 else:
-                    ui.html('<div class="dpr-panel-empty">'
-                            'No activities recorded.</div>')
+                    ui.html('<div class="dpr-panel-empty">No activities.</div>')
 
-        # ── Row 2: Data Quality (full width) ──────────────────────────
+        # ── Row 2: Quality + Coverage side by side ────────────────────
         with ui.element("div").classes("dpr-grid"):
-            with panel(
-                "Data Quality Breakdown",
-                subtitle=(
-                    "Composite score across four dimensions. "
-                    "A = ≥85, B = ≥70, C = ≥55, D below. "
-                    "Hard conflicts penalize consistency."
-                ),
-                total=f"{q.score}",
-                total_label="score",
-                wide=True,
-            ):
-                quality_bars = [
+            with panel("Data Quality Breakdown",
+                       subtitle="Four-dimension composite. "
+                                "A ≥85, B ≥70, C ≥55.",
+                       total=f"{q.score}", total_label="score"):
+                bars = [
                     ("Completeness",  q.completeness  * 100, 40),
                     ("Confidence",    q.confidence    * 100, 30),
                     ("Corroboration", q.corroboration * 100, 15),
                     ("Consistency",   q.consistency   * 100, 15),
                 ]
                 rows_html = ""
-                for label, pct, weight in quality_bars:
+                for label, pct, weight in bars:
                     rows_html += (
                         f'<div class="dpr-bar-row">'
                         f'  <span class="dpr-bar-label">{label} '
@@ -219,117 +284,85 @@ def render():
                         f'  <span class="dpr-bar-value">{pct:.0f}%</span>'
                         f'</div>'
                     )
-                # Confidence distribution mini-strip
-                total_rows = q.n_high + q.n_medium + q.n_low or 1
-                conf_strip = (
-                    '<div style="margin-top:18px;">'
-                    '<div style="color:#85858c;font-size:10.5px;'
-                    'letter-spacing:0.12em;text-transform:uppercase;'
-                    'font-weight:600;margin-bottom:8px;">'
-                    'Row confidence distribution</div>'
-                    '<div class="dpr-ratio-track" style="height:10px;">'
-                    f'<div class="dpr-ratio-skilled" '
-                    f'     style="width:{q.n_high/total_rows*100:.1f}%;"></div>'
-                    f'<div class="dpr-ratio-helpers" '
-                    f'     style="width:{q.n_medium/total_rows*100:.1f}%;'
-                    f'            background:rgba(255,176,32,0.35);"></div>'
-                    f'<div style="width:{q.n_low/total_rows*100:.1f}%;'
-                    f'            background:rgba(255,77,106,0.35);"></div>'
-                    '</div>'
-                    '<div class="dpr-ratio-legend">'
-                    f'<span><span class="dpr-ratio-dot" '
-                    f'     style="background:var(--dpr-primary)"></span>'
-                    f'High · {q.n_high}</span>'
-                    f'<span><span class="dpr-ratio-dot" '
-                    f'     style="background:rgba(255,176,32,0.5)"></span>'
-                    f'Medium · {q.n_medium}</span>'
-                    f'<span><span class="dpr-ratio-dot" '
-                    f'     style="background:rgba(255,77,106,0.5)"></span>'
-                    f'Low · {q.n_low}</span>'
-                    '</div>'
-                    '</div>'
-                )
-                ui.html(
-                    f'<div class="dpr-bars">{rows_html}</div>{conf_strip}'
-                ).classes("w-full")
+                ui.html(f'<div class="dpr-bars">{rows_html}</div>')
 
-        # ── Row 3: progress + crew composition ────────────────────────
+            with panel("Field Coverage",
+                       subtitle="Percentage of work rows that contain "
+                                "each field. Low coverage = sparse source data.",
+                       total=f"{len(rpt.work_progress)}",
+                       total_label="rows"):
+                _render_coverage(rpt)
+
+        # ── Row 3: Anomalies (full width) ─────────────────────────────
+        if anomalies:
+            with ui.element("div").classes("dpr-grid"):
+                with panel(
+                    "Anomalies",
+                    subtitle="Statistical outliers in crew counts, "
+                             "quantities, or coverage gaps.",
+                    total=f"{len(anomalies)}",
+                    total_label="flagged",
+                    wide=True,
+                ):
+                    _render_anomalies(anomalies)
+
+        # ── Row 4: progress + crew composition ────────────────────────
         with ui.element("div").classes("dpr-grid"):
-            with panel(
-                "Progress Distribution",
-                subtitle="Tasks per completion band.",
-                total=f"{prog.reported}",
-                total_label="reported",
-            ):
+            with panel("Progress Distribution",
+                       subtitle="Tasks per completion band.",
+                       total=f"{prog.reported}", total_label="reported"):
                 if prog.reported:
                     histogram(prog.buckets)
                 else:
-                    ui.html('<div class="dpr-panel-empty">'
-                            'No progress values reported.</div>')
+                    ui.html('<div class="dpr-panel-empty">No progress values.</div>')
 
-            with panel(
-                "Crew Composition",
-                subtitle="Skilled vs helpers per building.",
-                total=A.fmt_count(mp.total),
-                total_label="crew",
-            ):
+            with panel("Crew Composition",
+                       subtitle="Skilled vs helpers per building.",
+                       total=A.fmt_count(mp.total), total_label="crew"):
                 if eff:
                     ratio_bars(eff[:8])
                 else:
-                    ui.html('<div class="dpr-panel-empty">'
-                            'No crew data in this report.</div>')
+                    ui.html('<div class="dpr-panel-empty">No crew data.</div>')
 
-        # ── Row 4: Building × Activity matrix (full width) ────────────
+        # ── Row 5: matrix ─────────────────────────────────────────────
         if matx["activities"] and matx["buildings"]:
             with ui.element("div").classes("dpr-grid"):
-                with panel(
-                    "Building × Activity Matrix",
-                    subtitle="Where each trade is deployed across the site.",
-                    wide=True,
-                ):
+                with panel("Building × Activity Matrix",
+                           subtitle="Where each trade is deployed.",
+                           wide=True):
                     matrix_view(matx)
 
-        # ── Row 5: zones + materials + equipment ──────────────────────
+        # ── Row 6: zones + materials + equipment ──────────────────────
         if zones or mats or equip:
             with ui.element("div").classes("dpr-grid"):
-                with panel(
-                    "Zone Density",
-                    subtitle="Work rows grouped by zone.",
-                    total=A.fmt_count(sum(c for _, c in zones)) if zones else "",
-                    total_label="rows",
-                ):
+                with panel("Zone Density",
+                           subtitle="Work rows by zone.",
+                           total=A.fmt_count(sum(c for _, c in zones)) if zones else "",
+                           total_label="rows"):
                     if zones:
                         top_list([(f"Zone {z}", c) for z, c in zones])
                     else:
-                        ui.html('<div class="dpr-panel-empty">'
-                                'No zone data recorded.</div>')
+                        ui.html('<div class="dpr-panel-empty">No zone data.</div>')
 
-                with panel(
-                    "Top Materials",
-                    subtitle="Materials by quantity across all sources.",
-                    total=f"{len(mats)}",
-                    total_label="items",
-                ):
+                with panel("Top Materials",
+                           subtitle="Materials by quantity.",
+                           total=f"{len(mats)}", total_label="items"):
                     if mats:
                         top_list([
                             (n, f"{int(q) if q.is_integer() else q:g} {u}".strip())
                             for n, q, u in mats
                         ])
                     else:
-                        ui.html('<div class="dpr-panel-empty">'
-                                'No materials with quantities.</div>')
+                        ui.html('<div class="dpr-panel-empty">No materials.</div>')
 
-                with panel(
-                    "Equipment Status",
-                    subtitle="Equipment rows grouped by status.",
-                    total=A.fmt_count(sum(c for _, c in equip)) if equip else "",
-                    total_label="units",
-                ):
+                with panel("Equipment Status",
+                           subtitle="Equipment by status.",
+                           total=A.fmt_count(sum(c for _, c in equip)) if equip else "",
+                           total_label="units"):
                     if equip:
                         bar_list(equip, show_pct=True)
                     else:
-                        ui.html('<div class="dpr-panel-empty">'
-                                'No equipment status recorded.</div>')
+                        ui.html('<div class="dpr-panel-empty">No equipment.</div>')
 
         # ── Conflicts + notes ─────────────────────────────────────────
         from ui.conflicts import conflict_banner, notes_banner
@@ -338,18 +371,14 @@ def render():
 
         # ── Detailed report ───────────────────────────────────────────
         with ui.card().classes("dpr-card w-full"):
-            section_title(
-                "Detailed Report",
-                "Complete breakdown by section."
-            )
+            section_title("Detailed Report", "Complete breakdown by section.")
             report_preview()
 
         _download_row()
 
         with ui.row().classes("gap-3 mt-2 items-center"):
             if state.report_id():
-                ui.label(f"Saved as report #{state.report_id()}") \
-                    .classes("dpr-muted")
+                ui.label(f"Saved as report #{state.report_id()}").classes("dpr-muted")
 
 
 def _empty() -> None:
@@ -361,10 +390,10 @@ def _empty() -> None:
                      "JPG / TXT, then click Aggregate.").classes("text-white")
         else:
             ui.label(f"{n_queue} file(s) queued but no report produced. "
-                     "Check the Activity Log on the upload page.").classes("text-white")
+                     "Check the Activity Log.").classes("text-white")
 
     if state.logs():
-        section_title("Last activity", "Recent log lines from this session.")
+        section_title("Last activity", "Recent log lines.")
         with ui.card().classes("dpr-card w-full"):
             ui.html("<br>".join(state.logs()[-15:])).classes("dpr-console w-full")
 
