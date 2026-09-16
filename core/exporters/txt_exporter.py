@@ -8,7 +8,14 @@ THIN = "-" * 78
 
 def _fmt(item) -> str:
     if isinstance(item, dict):
-        return " · ".join(f"{k}: {v}" for k, v in item.items() if v not in (None, ""))
+        parts = []
+        for k, v in item.items():
+            if v in (None, "", []):
+                continue
+            if isinstance(v, list):
+                v = ", ".join(str(x) for x in v)
+            parts.append(f"{k}: {v}")
+        return " · ".join(parts)
     return str(item)
 
 
