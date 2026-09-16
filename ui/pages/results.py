@@ -1,23 +1,28 @@
-"""Results — analytics dashboard."""
+"""Results — analytics dashboard with AI risk forecast and S-curve."""
 from __future__ import annotations
 
 import re
 
-from nicegui import ui
+from nicegui import ui, run
 
 from core import analytics as A
 from core import quality as Q
 from core import anomaly as AN
+from core import risk as RISK
+from core import production as PROD
+from core import history as HIST
 from ui import state
 from ui.shell import page_shell
 from ui.components import (
     bar_list,
     histogram,
+    line_chart,
     matrix_view,
     metadata_strip,
     panel,
     ratio_bars,
     report_preview,
+    risk_forecast,
     section_title,
     stat_grid,
     top_list,
@@ -81,89 +86,226 @@ def _download_row(*, prominent: bool = False) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Coverage panel body
+# Risk Forecast panel
 # ═══════════════════════════════════════════════════════════════════════════
-def _render_coverage(report) -> None:
-    cov = AN.compute_coverage(report)
-    rows = cov["fields"]
-    if not rows:
-        ui.html('<div class="dpr-panel-empty">No rows to measure.</div>')
-        return
+def _render_risk_section(report_id, n_reports):
+    cache_key = f"{report_id}:{n_reports}"
+    cached = state.risk_cache().get(cache_key)
 
-    html = '<div class="dpr-bars">'
-    for f in rows:
-        pct = f["pct"]
-        tone = "#22c55e" if pct >= 75 else "#ffb020" if pct >= 40 else "#ff4d6a"
-        html += (
-            f'<div class="dpr-bar-row">'
-            f'  <span class="dpr-bar-label">{f["label"]}</span>'
-            f'  <div class="dpr-bar-track">'
-            f'    <div class="dpr-bar-fill" '
-            f'         style="width:{pct:.1f}%;background:{tone};"></div>'
-            f'  </div>'
-            f'  <span class="dpr-bar-value">{f["count"]}/{f["total"]}'
-            f'    <span class="dpr-bar-pct">{pct:.0f}%</span></span>'
-            f'</div>'
+    container = ui.column().classes("w-full gap-2")
+
+    def render_cached():
+        container.clear()
+        with container:
+            if cached:
+                risk_forecast(cached)
+
+    async def run_analysis():
+        container.clear()
+        with container:
+            ui.label("Analyzing last 7 days with Gemini…") \
+                .classes("dpr-muted")
+        try:
+            recent = await run.io_bound(HIST.load_recent, 7)
+            data = await run.io_bound(RISK.analyze, recent)
+            state.set_risk_cache(cache_key, data)
+            state.log(
+                f"[risk] {data.get('overall_risk','?')} · "
+                f"{len(data.get('risks', []))} risk(s)"
+            )
+            container.clear()
+            with container:
+                risk_forecast(data)
+        except Exception as ex:
+            state.log(f"[err] risk: {type(ex).__name__}: {ex}")
+            container.clear()
+            with container:
+                ui.label(f"Risk analysis failed: {ex}").classes("text-white")
+
+    with ui.element("div").classes("dpr-panel dpr-panel-wide"):
+        with ui.element("div").classes("dpr-panel-header"):
+            ui.html('<div class="dpr-panel-title">'
+                    'Risk &amp; Bottleneck Forecast</div>')
+            ui.button("Run AI analysis" if not cached else "Refresh",
+                      on_click=run_analysis).classes("dpr-btn-primary")
+        ui.html(
+            '<div class="dpr-panel-sub">'
+            'Gemini reads the last 7 days of reports and flags schedule, '
+            'quality, resource, weather, safety, and reporting risks.'
+            '</div>'
         )
-    html += "</div>"
-
-    missing = cov.get("missing_buildings") or []
-    if missing:
-        html += (
-            f'<div style="margin-top:16px;padding-top:14px;'
-            f'border-top:1px solid var(--dpr-border);">'
-            f'  <div style="color:#ffb020;font-size:11.5px;font-weight:600;">'
-            f'    ⚠ Buildings in personnel but not in work progress: '
-            f'{", ".join(missing)}</div>'
-            f'</div>'
-        )
-    ui.html(html).classes("w-full")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Anomaly panel body
-# ═══════════════════════════════════════════════════════════════════════════
-def _render_anomalies(anomalies: list[dict]) -> None:
-    if not anomalies:
-        ui.html('<div class="dpr-panel-empty">'
-                'No statistical anomalies detected.</div>')
-        return
-
-    html = '<div class="dpr-toplist">'
-    for a in anomalies:
-        b = a.get("building", "")
-        f = a.get("floor", "")
-        act = a.get("activity", "")
-        loc_bits = [x for x in (f"B{b}" if b else "",
-                                f"F{f}" if f else "",
-                                act) if x]
-        loc = " · ".join(loc_bits) or "—"
-        sev = a.get("severity", "soft")
-        dot = (
-            '<span class="dpr-ratio-dot" style="background:#ffb020"></span>'
-            if sev == "soft" else
-            '<span class="dpr-ratio-dot" style="background:#ff4d6a"></span>'
-        )
-        html += (
-            f'<div class="dpr-toplist-row" style="flex-direction:column;'
-            f'align-items:flex-start;gap:4px;">'
-            f'  <div style="display:flex;align-items:center;gap:8px;width:100%;">'
-            f'    {dot}'
-            f'    <span class="dpr-toplist-name" style="flex:1;">{loc}</span>'
-            f'    <span class="dpr-toplist-value" '
-            f'          style="color:#ffb020;">'
-            f'{a.get("type","").replace("_"," ").title()}</span>'
-            f'  </div>'
-            f'  <div style="color:#85858c;font-size:11px;padding-left:18px;">'
-            f'{a.get("reason","")}</div>'
-            f'</div>'
-        )
-    html += "</div>"
-    ui.html(html).classes("w-full")
+        if cached:
+            with container:
+                risk_forecast(cached)
+        else:
+            with container:
+                ui.html('<div class="dpr-panel-empty">'
+                        'Click "Run AI analysis" to generate a risk forecast.'
+                        '</div>')
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Main
+# Production / S-curve panel
+# ═══════════════════════════════════════════════════════════════════════════
+def _render_production_section(report):
+    # Candidate activities from current report
+    acts = sorted({
+        (r.get("activity") or "").strip()
+        for r in report.work_progress
+        if r.get("activity")
+    })
+
+    targets = state.s_curve_targets()
+
+    chart_container = ui.column().classes("w-full gap-2")
+
+    def _refresh_chart():
+        chart_container.clear()
+        with chart_container:
+            if not targets:
+                ui.html('<div class="dpr-panel-empty">'
+                        'No targets set. Click "Set targets" to add planned '
+                        'quantities per activity.</div>')
+                return
+            # Load recent history once, plot each target
+            try:
+                recent = HIST.load_recent(60)
+            except Exception as e:
+                ui.html(f'<div class="dpr-panel-empty">'
+                        f'Could not load history: {e}</div>')
+                return
+
+            if not recent:
+                ui.html('<div class="dpr-panel-empty">'
+                        'No saved reports yet — aggregate and save one first.'
+                        '</div>')
+                return
+
+            for act, cfg in targets.items():
+                curve = PROD.build_curve(
+                    act, recent,
+                    target_total=cfg["target"],
+                    start_date=cfg["start"],
+                    end_date=cfg["end"],
+                )
+                if not curve["x_labels"]:
+                    ui.html(f'<div class="dpr-panel-empty">'
+                            f'No data for "{act}" in the target window.</div>')
+                    continue
+
+                var = curve["variance_pct"]
+                tone = "#22c55e" if var >= 0 else "#ff4d6a"
+                ui.html(
+                    f'<div style="display:flex;align-items:baseline;'
+                    f'gap:10px;margin-top:6px;flex-wrap:wrap;">'
+                    f'  <span style="color:#e8e8ea;font-size:13px;'
+                    f'      font-weight:600;">{act}</span>'
+                    f'  <span style="color:#85858c;font-size:11px;">'
+                    f'    target {int(cfg["target"]) if float(cfg["target"]).is_integer() else cfg["target"]}'
+                    f'  </span>'
+                    f'  <span style="color:{tone};font-size:11.5px;'
+                    f'      font-weight:600;">'
+                    f'    {var:+.1f}% vs plan'
+                    f'  </span>'
+                    f'  <span style="color:#4f4f56;font-size:11px;">'
+                    f'    today {curve["today_cum"]:.0f} / '
+                    f'    {curve["today_planned"]:.0f} planned'
+                    f'  </span>'
+                    f'</div>'
+                )
+                line_chart(
+                    f"{act} — cumulative curve",
+                    [
+                        {"name": "Planned", "color": "#4f4f56",
+                         "points": [v for _, v in curve["planned"]]},
+                        {"name": "Actual",  "color": "#22c55e",
+                         "points": [v for _, v in curve["actual"]]},
+                    ],
+                    x_labels=curve["x_labels"],
+                    height=220,
+                )
+
+    def _open_targets_dialog():
+        with ui.dialog() as dlg, ui.card().classes("dpr-card").style(
+            "min-width:520px;max-width:600px;"
+        ):
+            ui.label("S-Curve Targets").classes("dpr-title")
+            ui.label(
+                "Set planned quantity, start date, and end date per activity."
+            ).classes("dpr-muted").style("margin-bottom:12px;")
+
+            act_select = ui.select(
+                acts, label="Activity", value=(acts[0] if acts else None),
+            ).props("outlined dense").classes("w-full")
+
+            with ui.row().classes("w-full gap-3"):
+                target_in = ui.number(
+                    label="Target quantity", value=100, min=0,
+                ).props("outlined dense").classes("flex-1")
+                start_in = ui.input(
+                    label="Start date (YYYY-MM-DD)",
+                ).props("outlined dense").classes("flex-1")
+                end_in = ui.input(
+                    label="End date (YYYY-MM-DD)",
+                ).props("outlined dense").classes("flex-1")
+
+            existing_container = ui.column().classes("w-full gap-1 mt-3")
+            def _render_existing():
+                existing_container.clear()
+                with existing_container:
+                    if not targets:
+                        return
+                    ui.label("Current targets").classes("dpr-muted")
+                    for a, cfg in targets.items():
+                        ui.label(
+                            f"• {a} — {cfg['target']} by {cfg['end']}"
+                        ).classes("text-white").style("font-size:11.5px;")
+            _render_existing()
+
+            def _save():
+                if not act_select.value:
+                    ui.notify("Select an activity", color="orange"); return
+                try:
+                    t = float(target_in.value or 0)
+                except (TypeError, ValueError):
+                    ui.notify("Target must be a number", color="orange"); return
+                if not start_in.value or not end_in.value:
+                    ui.notify("Start and end date required", color="orange")
+                    return
+                state.set_s_curve_target(
+                    act_select.value, t, start_in.value, end_in.value,
+                )
+                _refresh_chart()
+                _render_existing()
+                ui.notify(f"Saved target for {act_select.value}", color="green")
+
+            with ui.row().classes("gap-2 mt-4"):
+                ui.button("Save target", on_click=_save).classes("dpr-btn-primary")
+                ui.button("Clear all", on_click=lambda: (
+                    state.clear_s_curve_targets(),
+                    _refresh_chart(), _render_existing(),
+                    ui.notify("Cleared", color="orange"),
+                ))
+                ui.button("Close", on_click=dlg.close)
+
+        dlg.open()
+
+    with ui.element("div").classes("dpr-panel dpr-panel-wide"):
+        with ui.element("div").classes("dpr-panel-header"):
+            ui.html('<div class="dpr-panel-title">Production Curve</div>')
+            with ui.row().classes("gap-2"):
+                ui.button("Set targets", on_click=_open_targets_dialog)
+        ui.html(
+            '<div class="dpr-panel-sub">'
+            'Planned vs actual cumulative quantity per activity, from the '
+            'last 60 saved reports. Plan follows a standard cosine S-curve.'
+            '</div>'
+        )
+        _refresh_chart()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Main render
 # ═══════════════════════════════════════════════════════════════════════════
 def render():
     rpt = state.report()
@@ -181,7 +323,6 @@ def render():
         q = Q.compute_quality(rpt)
         anomalies = AN.detect_anomalies(rpt)
 
-        # ── Metadata ──────────────────────────────────────────────────
         metadata_strip([
             ("Project",     rpt.project_name or "—"),
             ("Date",        rpt.report_date  or "—"),
@@ -193,18 +334,22 @@ def render():
 
         _download_row(prominent=True)
 
-        # ── Link to reconcile ─────────────────────────────────────────
         with ui.row().classes("gap-2 items-center mt-1"):
             ui.button(
                 "Reconcile Sources →",
                 on_click=lambda: ui.navigate.to("/reconcile"),
             ).classes("dpr-btn-primary")
             ui.label(
-                f"{len(rpt.reconciliation)} merged key(s) with "
-                f"per-source breakdown"
+                f"{len(rpt.reconciliation)} merged key(s)"
             ).classes("dpr-muted")
 
-        # ── Analytics ─────────────────────────────────────────────────
+        # ── NEW: AI Risk Forecast ─────────────────────────────────────
+        _render_risk_section(state.report_id(), 7)
+
+        # ── NEW: Production Curve / S-Curve ───────────────────────────
+        _render_production_section(rpt)
+
+        # ── Existing analytics ────────────────────────────────────────
         mp    = A.manpower(rpt)
         act   = A.activities(rpt)
         prog  = A.progress(rpt)
@@ -214,7 +359,6 @@ def render():
         equip = A.equipment_status(rpt)
         matx  = A.activity_matrix(rpt, top_n_acts=6)
 
-        # ── Stat grid ─────────────────────────────────────────────────
         grade_tone = (
             "primary" if q.grade in ("A", "B")
             else "warning" if q.grade == "C"
@@ -240,7 +384,6 @@ def render():
              "tone": "warning" if anomalies else "primary"},
         ])
 
-        # ── Row 1 ─────────────────────────────────────────────────────
         with ui.element("div").classes("dpr-grid"):
             with panel("Manpower by Building",
                        subtitle="Skilled + helper headcount per building.",
@@ -259,11 +402,9 @@ def render():
                 else:
                     ui.html('<div class="dpr-panel-empty">No activities.</div>')
 
-        # ── Row 2: Quality + Coverage side by side ────────────────────
         with ui.element("div").classes("dpr-grid"):
             with panel("Data Quality Breakdown",
-                       subtitle="Four-dimension composite. "
-                                "A ≥85, B ≥70, C ≥55.",
+                       subtitle="Four-dimension composite.",
                        total=f"{q.score}", total_label="score"):
                 bars = [
                     ("Completeness",  q.completeness  * 100, 40),
@@ -287,26 +428,64 @@ def render():
                 ui.html(f'<div class="dpr-bars">{rows_html}</div>')
 
             with panel("Field Coverage",
-                       subtitle="Percentage of work rows that contain "
-                                "each field. Low coverage = sparse source data.",
-                       total=f"{len(rpt.work_progress)}",
-                       total_label="rows"):
-                _render_coverage(rpt)
+                       subtitle="Percentage of work rows that contain each field.",
+                       total=f"{len(rpt.work_progress)}", total_label="rows"):
+                cov = AN.compute_coverage(rpt)
+                html = '<div class="dpr-bars">'
+                for f in cov["fields"]:
+                    pct = f["pct"]
+                    tone = "#22c55e" if pct >= 75 else "#ffb020" if pct >= 40 else "#ff4d6a"
+                    html += (
+                        f'<div class="dpr-bar-row">'
+                        f'  <span class="dpr-bar-label">{f["label"]}</span>'
+                        f'  <div class="dpr-bar-track">'
+                        f'    <div class="dpr-bar-fill" '
+                        f'         style="width:{pct:.1f}%;background:{tone};"></div>'
+                        f'  </div>'
+                        f'  <span class="dpr-bar-value">{f["count"]}/{f["total"]}'
+                        f'    <span class="dpr-bar-pct">{pct:.0f}%</span></span>'
+                        f'</div>'
+                    )
+                html += "</div>"
+                ui.html(html)
 
-        # ── Row 3: Anomalies (full width) ─────────────────────────────
         if anomalies:
             with ui.element("div").classes("dpr-grid"):
-                with panel(
-                    "Anomalies",
-                    subtitle="Statistical outliers in crew counts, "
-                             "quantities, or coverage gaps.",
-                    total=f"{len(anomalies)}",
-                    total_label="flagged",
-                    wide=True,
-                ):
-                    _render_anomalies(anomalies)
+                with panel("Anomalies",
+                           subtitle="Statistical outliers and coverage gaps.",
+                           total=f"{len(anomalies)}", total_label="flagged",
+                           wide=True):
+                    html = '<div class="dpr-toplist">'
+                    for a in anomalies:
+                        b = a.get("building", "")
+                        f = a.get("floor", "")
+                        act = a.get("activity", "")
+                        loc_bits = [x for x in (f"B{b}" if b else "",
+                                                f"F{f}" if f else "",
+                                                act) if x]
+                        loc = " · ".join(loc_bits) or "—"
+                        sev = a.get("severity", "soft")
+                        dot = (
+                            '<span class="dpr-ratio-dot" style="background:#ffb020"></span>'
+                            if sev == "soft" else
+                            '<span class="dpr-ratio-dot" style="background:#ff4d6a"></span>'
+                        )
+                        html += (
+                            f'<div class="dpr-toplist-row" style="flex-direction:column;'
+                            f'align-items:flex-start;gap:4px;">'
+                            f'  <div style="display:flex;align-items:center;gap:8px;width:100%;">'
+                            f'    {dot}'
+                            f'    <span class="dpr-toplist-name" style="flex:1;">{loc}</span>'
+                            f'    <span class="dpr-toplist-value" style="color:#ffb020;">'
+                            f'{a.get("type","").replace("_"," ").title()}</span>'
+                            f'  </div>'
+                            f'  <div style="color:#85858c;font-size:11px;padding-left:18px;">'
+                            f'{a.get("reason","")}</div>'
+                            f'</div>'
+                        )
+                    html += "</div>"
+                    ui.html(html)
 
-        # ── Row 4: progress + crew composition ────────────────────────
         with ui.element("div").classes("dpr-grid"):
             with panel("Progress Distribution",
                        subtitle="Tasks per completion band.",
@@ -324,7 +503,6 @@ def render():
                 else:
                     ui.html('<div class="dpr-panel-empty">No crew data.</div>')
 
-        # ── Row 5: matrix ─────────────────────────────────────────────
         if matx["activities"] and matx["buildings"]:
             with ui.element("div").classes("dpr-grid"):
                 with panel("Building × Activity Matrix",
@@ -332,7 +510,6 @@ def render():
                            wide=True):
                     matrix_view(matx)
 
-        # ── Row 6: zones + materials + equipment ──────────────────────
         if zones or mats or equip:
             with ui.element("div").classes("dpr-grid"):
                 with panel("Zone Density",
@@ -364,12 +541,10 @@ def render():
                     else:
                         ui.html('<div class="dpr-panel-empty">No equipment.</div>')
 
-        # ── Conflicts + notes ─────────────────────────────────────────
         from ui.conflicts import conflict_banner, notes_banner
         conflict_banner(rpt.conflicts)
         notes_banner(rpt.notes)
 
-        # ── Detailed report ───────────────────────────────────────────
         with ui.card().classes("dpr-card w-full"):
             section_title("Detailed Report", "Complete breakdown by section.")
             report_preview()
