@@ -56,6 +56,10 @@ def render():
             ui.button("Download TXT",   on_click=_download_txt)
 
     with ui.row().classes("gap-3 mt-4"):
+        if state.report_id():
+            ui.label(f"Saved as report #{state.report_id()}") \
+                .classes("text-white").style("opacity:.7; align-self:center;")
+        ui.button("History", on_click=lambda: ui.navigate.to("/history"))
         ui.button("New Session", on_click=_new_session)
 
 
