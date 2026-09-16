@@ -97,7 +97,13 @@ def _build_table(items: list, styles) -> Table | None:
                   for k in keys]
         rows = [header]
         for it in items:
-            rows.append([Paragraph(_e(it.get(k, "")), styles["cell"]) for k in keys])
+            row_cells = []
+            for k in keys:
+                v = it.get(k, "")
+                if isinstance(v, list):
+                    v = ", ".join(str(x) for x in v)
+                row_cells.append(Paragraph(_e(v), styles["cell"]))
+            rows.append(row_cells)
 
     # List of scalars → single-column table
     else:
