@@ -58,6 +58,60 @@ _log("theme applied")
 @app.get("/healthz")
 def healthz():
     return Response(content="ok", media_type="text/plain")
+@app.get("/test-gemini")
+def test_gemini():
+    """Bare-metal Gemini test with hard 30s timeout."""
+    import concurrent.futures
+    from config import settings
+    import google.generativeai as genai
+
+    def _run():
+        genai.configure(api_key=settings.GEMINI_API_KEY)
+        # 1) What models does this key see?
+        try:
+            available = [
+                m.name.replace("models/", "")
+                for m in genai.list_models()
+                if "generateContent" in getattr(m, "supported_generation_methods", [])
+            ]
+        except Exception as e:
+            return f"LIST_MODELS_FAILED: {type(e).__name__}: {e}"
+
+        # 2) Try each configured model with a hard 30s timeout
+        tried = []
+        for name in [settings.GEMINI_MODEL, *settings.GEMINI_FALLBACK_MODELS]:
+            tried.append(name)
+            if name not in available:
+                tried[-1] += " (NOT AVAILABLE)"
+                continue
+            try:
+                model = genai.GenerativeModel(name)
+                resp = model.generate_content(
+                    "Reply with exactly: OK",
+                    request_options={"timeout": 30},
+                )
+                return (
+                    f"SUCCESS with {name}\n"
+                    f"Response: {resp.text!r}\n\n"
+                    f"Available models: {available}"
+                )
+            except Exception as e:
+                return (
+                    f"MODEL_FAILED: {name}\n"
+                    f"{type(e).__name__}: {e}\n\n"
+                    f"Available models: {available}\n"
+                    f"Tried: {tried}"
+                )
+        return f"NO USABLE MODEL\nAvailable: {available}\nTried: {tried}"
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_run)
+            return Response(content=future.result(timeout=40), media_type="text/plain")
+    except concurrent.futures.TimeoutError:
+        return Response(content="HARD TIMEOUT after 40s — Gemini is unreachable or SDK is stuck", media_type="text/plain")
+    except Exception as e:
+        return Response(content=f"UNEXPECTED: {type(e).__name__}: {e}", media_type="text/plain")
 
 
 @ui.page("/")
