@@ -1,38 +1,81 @@
-import json
-from core.models import ExtractedDocument, AggregatedReport
-from core.gemini_client import generate_text
-from core.errors import GeminiError
+"""Canonical data contracts for DPR-Matrix."""
+from __future__ import annotations
+from dataclasses import dataclass, field, asdict
+from typing import Any
 
-_PROMPT = """You are a construction Daily Progress Report (DPR) analyst.
-Merge the following site reports into ONE structured DPR.
 
-Return STRICT JSON matching this schema:
-{{
-  "project_name": "", "report_date": "", "site_location": "",
-  "prepared_by": "", "weather": "",
-  "personnel_on_site": [], "work_progress": [], "equipment": [],
-  "materials": [], "hse_observations": [], "incidents": "",
-  "quality_checks": [], "issues_risks": [], "next_day_plan": []
-}}
+# ---------------------------------------------------------------------------
+# Ingestion
+# ---------------------------------------------------------------------------
+@dataclass
+class ExtractedDocument:
+    filename: str
+    mime: str
+    sections: list[dict] = field(default_factory=list)
+    raw_text: str = ""
+    meta: dict[str, Any] = field(default_factory=dict)
 
-SOURCE REPORTS:
-{docs}
-"""
 
-def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
-    blocks = []
-    for d in docs:
-        blocks.append(f"--- FILE: {d.filename} ---\n{d.raw_text[:12000]}")
-    prompt = _PROMPT.format(docs="\n\n".join(blocks))
+# ---------------------------------------------------------------------------
+# Aggregation
+# ---------------------------------------------------------------------------
+@dataclass
+class LineItem:
+    """A single row in a structured table with provenance."""
+    label: str = ""
+    quantity: str = ""
+    unit: str = ""
+    notes: str = ""
+    sources: list[str] = field(default_factory=list)
+    count: int = 1
 
-    raw = generate_text(prompt, json_mode=True)
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise GeminiError(f"Gemini returned non-JSON: {e}") from e
+    def to_dict(self) -> dict:
+        return asdict(self)
 
-    data.setdefault("source_files", [d.filename for d in docs])
-    return AggregatedReport(**{
-        k: v for k, v in data.items()
-        if k in AggregatedReport.__dataclass_fields__
-    })
+
+@dataclass
+class Conflict:
+    """A discrepancy flagged across source reports."""
+    field: str = ""
+    values: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class AggregatedReport:
+    # Header
+    project_name: str = ""
+    report_date: str = ""
+    site_location: str = ""
+    prepared_by: str = ""
+    weather: str = ""
+
+    # Structured rows (with provenance)
+    personnel_on_site: list[dict] = field(default_factory=list)
+    work_progress:     list[dict] = field(default_factory=list)
+    equipment:         list[dict] = field(default_factory=list)
+    materials:         list[dict] = field(default_factory=list)
+
+    # Free-text observations
+    hse_observations: list[str] = field(default_factory=list)
+    quality_checks:   list[str] = field(default_factory=list)
+    issues_risks:     list[str] = field(default_factory=list)
+    next_day_plan:    list[str] = field(default_factory=list)
+
+    incidents: str = ""
+
+    # Provenance & diagnostics
+    source_files: list[str] = field(default_factory=list)
+    conflicts:    list[dict] = field(default_factory=list)
+    notes:        list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AggregatedReport":
+        allowed = cls.__dataclass_fields__.keys()
+        return cls(**{k: v for k, v in data.items() if k in allowed})
