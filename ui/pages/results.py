@@ -8,18 +8,42 @@ def render():
     ui.separator()
 
     rpt = state.report()
+    n_docs = len(state.docs())
+
+    # --- Diagnostic line (visible always) ---
+    ui.label(
+        f"Session check → docs loaded: {n_docs} · report in state: "
+        f"{'yes' if rpt else 'no'} · log lines: {len(state.logs())}"
+    ).classes("text-white").style("opacity:.7; font-size:12px")
 
     if rpt is None:
         with ui.card().classes("w-full"):
             ui.label("⚠  No report in this session.").classes("dpr-title text-xl")
-            ui.label(
-                "Either aggregation failed, or this tab reloaded and cleared state. "
-                "Go back to Upload, add files, and click Aggregate Reports."
-            ).classes("text-white")
+            if n_docs == 0:
+                ui.label(
+                    "No files were uploaded. Go back, upload at least one "
+                    "PDF / XLSX / PNG / JPG / TXT, then click Aggregate Reports."
+                ).classes("text-white")
+            else:
+                ui.label(
+                    f"{n_docs} file(s) are loaded but aggregation hasn't produced "
+                    "a report yet. Click Aggregate Reports on the Upload page and "
+                    "watch the Activity Log for errors."
+                ).classes("text-white")
+
+        # Show last log lines so the failure is right here
+        if state.logs():
+            section_title("Last activity")
+            with ui.card().classes("w-full"):
+                ui.html(
+                    "<br>".join(state.logs()[-15:])
+                ).classes("dpr-console w-full")
+
         with ui.row().classes("gap-3 mt-4"):
             ui.button("Back to Upload", on_click=lambda: ui.navigate.to("/"))
         return
 
+    # --- Happy path ---
     with ui.card().classes("w-full"):
         section_title("Preview")
         report_preview()
