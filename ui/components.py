@@ -21,31 +21,48 @@ def log_console() -> ui.html:
 
 
 def _row_table(rows: list[dict]) -> None:
+    """Render a plain-HTML table — bypasses Quasar's white-on-white defaults."""
     if not rows:
         return
-    # Union of keys, preserve order
+    from html import escape as _esc
+
     keys: list[str] = []
     for r in rows:
         for k in r.keys():
             if k not in keys:
                 keys.append(k)
 
-    headers = [k.replace("_", " ").title() for k in keys]
-    table_rows = []
+    head = "".join(
+        f'<th style="color:#00FF66;font-weight:700;padding:8px 10px;'
+        f'text-align:left;background:#001a0a;'
+        f'border-bottom:2px solid #00FF66;white-space:nowrap;">'
+        f'{_esc(k.replace("_", " ").title())}</th>'
+        for k in keys
+    )
+
+    body = ""
     for r in rows:
-        cells = []
+        cells = ""
         for k in keys:
             v = r.get(k, "")
             if isinstance(v, list):
                 v = ", ".join(str(x) for x in v)
-            cells.append(str(v))
-        table_rows.append(cells)
+            cells += (
+                f'<td style="color:#ffffff;padding:6px 10px;'
+                f'border-bottom:1px solid #1f3f1f;vertical-align:top;">'
+                f'{_esc(str(v))}</td>'
+            )
+        body += f'<tr style="background:#0a0a0a;">{cells}</tr>'
 
-    with ui.card().classes("w-full").style("padding:0"):
-        ui.table(columns=[{"name": h, "label": h, "field": h, "align": "left"}
-                          for h in headers],
-                 rows=[dict(zip(headers, r)) for r in table_rows],
-                 row_key=headers[0]).classes("w-full").props("flat dense")
+    html = (
+        '<div style="overflow-x:auto;background:#0a0a0a;'
+        'border:1px solid #00FF66;border-radius:4px;margin-top:6px;">'
+        '<table style="width:100%;border-collapse:collapse;background:#0a0a0a;">'
+        f'<thead><tr>{head}</tr></thead>'
+        f'<tbody>{body}</tbody>'
+        '</table></div>'
+    )
+    ui.html(html).classes("w-full")
 
 
 def _bullet_list(items: list) -> None:
