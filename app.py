@@ -5,19 +5,33 @@ from fastapi import Response
 from config import settings
 from utils.logging_config import setup_logging
 from ui.theme import apply_theme
-# ...
+from core.db import init_db
 
-apply_theme()   # <-- MUST be before page decorators
+# Direct imports of the render functions — no package-level indirection
+from ui.pages.home import render as render_home
+from ui.pages.results import render as render_results
+
+
+setup_logging(settings.LOG_LEVEL)
+app.add_static_files("/assets", "assets")
+
+apply_theme()  # register shared CSS before any page is created
+
+
+@app.get("/healthz")
+def healthz():
+    return Response(content="ok", media_type="text/plain")
+
 
 @ui.page("/")
 def index():
-    home.render()
+    render_home()
+
 
 @ui.page("/results")
 def results_page():
-    results.render()
+    render_results()
 
-apply_theme()
 
 if __name__ in {"__main__", "__mp_main__"}:
     try:
