@@ -1,19 +1,14 @@
 """Two-pass aggregator.
 
 Pass 1 — Gemini extracts EACH file independently into a strict schema.
-Pass 2 — Python merges deterministically: normalize → group → reduce.
+Pass 2 — Python merges deterministically: normalize → group → resolve.
 
 The LLM never does the merge. All cross-file logic is auditable Python.
 
 Pass 6 added:  on_event, should_cancel, max_seconds (UX hardening).
-Pass 7 adds:
-  * Cross-file headcounts are REDUCED (max), never summed. Summing the
-    same site from two files double-counts the crew. Disagreements are
-    recorded as conflicts.
-  * Conflicts are populated in AggregatedReport.conflicts — the banner
-    on /results is no longer always empty.
-  * Fuzzy matching for equipment / materials names (difflib stdlib).
-  * Personnel cross-check note.
+Pass 7 added:  cross-file reduction, conflicts populated, fuzzy dedup.
+Pass 9 adds:   reliability-weighted resolution, tolerance bands,
+               per-row confidence, soft/hard conflict classification.
 """
 from __future__ import annotations
 
@@ -30,6 +25,7 @@ from core.normalize import (
     norm_building, norm_floor, norm_activity, norm_unit,
     to_float, fmt_num,
 )
+from core import quality as Q
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -187,7 +183,7 @@ def _clean_note(s: str) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Fuzzy matching (stdlib only — no rapidfuzz dependency)
+# Fuzzy matching
 # ═══════════════════════════════════════════════════════════════════════════
 _FUZZY_THRESHOLD = 0.85
 
@@ -204,50 +200,50 @@ def _fuzzy_key(name: str, model: str = "") -> str:
     return f"{(name or '').strip()} {(model or '').strip()}".strip()
 
 
-def _find_fuzzy(groups: list[dict], name: str, model: str, fields: tuple[str, str]) -> dict | None:
-    """Return the first group whose key is >= threshold similar to (name, model)."""
+def _find_fuzzy(groups: list[dict], name: str, model: str,
+                fields: tuple[str, str]) -> dict | None:
     target = _fuzzy_key(name, model)
     if not target:
         return None
     for g in groups:
-        candidate = _fuzzy_key(g.get(fields[0], ""), g.get(fields[1], "") if fields[1] else "")
+        candidate = _fuzzy_key(
+            g.get(fields[0], ""),
+            g.get(fields[1], "") if fields[1] else "",
+        )
         if _ratio(target, candidate) >= _FUZZY_THRESHOLD:
             return g
     return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Conflict helpers — shape matches ui/conflicts.py:
-#   {"field": str, "values": list[str]}
+# Conflict helpers
 # ═══════════════════════════════════════════════════════════════════════════
-def _reduce_source_values(
+def _conflict(
+    field: str,
     per_source: dict[str, float],
-) -> tuple[float | None, list[tuple[str, list[str]]]]:
-    """
-    per_source: {source_filename: value}, already summed WITHIN each source.
-    Returns (canonical_value, breakdown).
+    reliabilities: dict[str, float],
+    *,
+    resolved: float | None,
+    reason: str,
+) -> dict:
+    """Shape matches ui/conflicts.py: {field, values, severity, ...}."""
+    vals = list(per_source.values())
+    severity = "soft" if Q.values_agree(vals) else "hard"
 
-    breakdown is empty when there is no conflict (0 or 1 distinct value).
-    When there IS a conflict, breakdown is a list of (value_str, [sources])
-    sorted ascending. Canonical value = max.
-    """
-    if not per_source:
-        return None, []
-    unique_vals = sorted(set(per_source.values()))
-    if len(unique_vals) == 1:
-        return unique_vals[0], []
-
-    breakdown: list[tuple[str, list[str]]] = []
-    for v in unique_vals:
-        srcs = sorted(s for s, vv in per_source.items() if vv == v)
-        breakdown.append((fmt_num(v), srcs))
-    return unique_vals[-1], breakdown
-
-
-def _conflict(field_label: str, breakdown: list[tuple[str, list[str]]]) -> dict:
+    ranked = sorted(
+        per_source.items(),
+        key=lambda kv: (-reliabilities.get(kv[0], 0.5), kv[0]),
+    )
     return {
-        "field": field_label,
-        "values": [f"{v} ({', '.join(s)})" for v, s in breakdown],
+        "field": field,
+        "values": [
+            f"{fmt_num(v)} ({s}, r={reliabilities.get(s, 0.5):.2f})"
+            for s, v in ranked
+        ],
+        "severity": severity,
+        "type": "value",
+        "resolution": fmt_num(resolved) if resolved is not None else "",
+        "reason": reason,
     }
 
 
@@ -280,8 +276,8 @@ def _row_source(r: dict) -> str:
     return srcs[0] if srcs else ""
 
 
-def _merge_work(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Group by (normalized building, floor, activity)."""
+def _merge_work(rows: list[dict],
+                rel: dict[str, float]) -> tuple[list[dict], list[dict]]:
     groups: dict[tuple[str, str, str], dict] = {}
     conflicts: list[dict] = []
 
@@ -294,61 +290,68 @@ def _merge_work(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         if a == "" and b == "?" and f == "?":
             continue
         key = (b, f, a)
+        src = _row_source(r)
+
+        if key not in groups:
+            groups[key] = {
+                "building": b, "floor": f, "activity": a,
+                "zone": "", "unit": "", "progress_pct": "",
+                "notes": [], "sources": [],
+                "skilled_by_src": {}, "helpers_by_src": {},
+                "quantity_by_src": {},
+            }
+        g = groups[key]
+
+        if r.get("zone") and not g["zone"]:
+            g["zone"] = str(r["zone"]).strip()
+        if src and src not in g["sources"]:
+            g["sources"].append(src)
 
         qty  = to_float(r.get("quantity"))
         sk   = to_float(r.get("skilled"))
         hp   = to_float(r.get("helpers"))
         unit = norm_unit(r.get("unit", ""))
         note = _clean_note(r.get("notes", ""))
-        src  = _row_source(r)
+        pp   = (r.get("progress_pct") or "").strip()
 
-        if key not in groups:
-            groups[key] = {
-                "building": b,
-                "floor":    f,
-                "zone":     (r.get("zone") or "").strip(),
-                "activity": a,
-                "unit":     unit,
-                "progress_pct": (r.get("progress_pct") or "").strip(),
-                "notes":    [note] if note else [],
-                "sources":  [src] if src else [],
-                "skilled_by_src":  {},   # {source: summed_value}
-                "helpers_by_src":  {},
-                "quantity_by_src": {},
-            }
-        else:
-            g = groups[key]
-            if unit and not g["unit"]:
-                g["unit"] = unit
-            if note and note not in g["notes"]:
-                g["notes"].append(note)
-            if src and src not in g["sources"]:
-                g["sources"].append(src)
-
-        g = groups[key]
-        # RULE 7: within the same source, sum duplicates.
+        # RULE 7: sum duplicates WITHIN a single source
         if sk is not None:
-            g["skilled_by_src"][src] = g["skilled_by_src"].get(src, 0) + sk
+            g["skilled_by_src"][src]  = g["skilled_by_src"].get(src, 0) + sk
         if hp is not None:
-            g["helpers_by_src"][src] = g["helpers_by_src"].get(src, 0) + hp
+            g["helpers_by_src"][src]  = g["helpers_by_src"].get(src, 0) + hp
         if qty is not None:
             g["quantity_by_src"][src] = g["quantity_by_src"].get(src, 0) + qty
 
-    out = []
+        if unit and not g["unit"]:
+            g["unit"] = unit
+        if note and note not in g["notes"]:
+            g["notes"].append(note)
+        if pp and not g["progress_pct"]:
+            g["progress_pct"] = pp
+
+    out: list[dict] = []
     for (b, f, a), g in groups.items():
         label = f"Work · B{b}/F{f}/{a}"
 
-        sk_val,  sk_bd  = _reduce_source_values(g["skilled_by_src"])
-        hp_val,  hp_bd  = _reduce_source_values(g["helpers_by_src"])
-        qty_val, qty_bd = _reduce_source_values(g["quantity_by_src"])
+        sk_val,  sk_reason  = Q.resolve_with_reliability(g["skilled_by_src"],  rel)
+        hp_val,  hp_reason  = Q.resolve_with_reliability(g["helpers_by_src"],  rel)
+        qty_val, qty_reason = Q.resolve_with_reliability(g["quantity_by_src"], rel)
 
-        for field_label, bd in (
-            (f"{label} · skilled", sk_bd),
-            (f"{label} · helpers", hp_bd),
-            (f"{label} · quantity", qty_bd),
+        sk_conf  = Q.confidence_for_field(g["skilled_by_src"],  rel)
+        hp_conf  = Q.confidence_for_field(g["helpers_by_src"],  rel)
+        qty_conf = Q.confidence_for_field(g["quantity_by_src"], rel)
+        row_conf = Q.worst_confidence(Q.worst_confidence(sk_conf, hp_conf), qty_conf)
+
+        for field, per_src, resolved, reason in (
+            ("skilled",  g["skilled_by_src"],  sk_val,  sk_reason),
+            ("helpers",  g["helpers_by_src"],  hp_val,  hp_reason),
+            ("quantity", g["quantity_by_src"], qty_val, qty_reason),
         ):
-            if bd:
-                conflicts.append(_conflict(field_label, bd))
+            if len(per_src) > 1:
+                conflicts.append(_conflict(
+                    f"{label} · {field}", per_src, rel,
+                    resolved=resolved, reason=reason,
+                ))
 
         crew_total = ""
         if sk_val is not None or hp_val is not None:
@@ -365,6 +368,7 @@ def _merge_work(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             "helpers":      fmt_num(hp_val) if hp_val is not None else "",
             "crew_total":   crew_total,
             "progress_pct": g["progress_pct"],
+            "confidence":   row_conf,
             "notes":        " | ".join(g["notes"]),
             "sources":      g["sources"],
         })
@@ -379,8 +383,7 @@ def _merge_work(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     return out, conflicts
 
 
-def _merge_equipment(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Group by fuzzy (name, model). Max quantity across sources."""
+def _merge_equipment(rows, rel):
     groups: list[dict] = []
     conflicts: list[dict] = []
 
@@ -421,12 +424,16 @@ def _merge_equipment(rows: list[dict]) -> tuple[list[dict], list[dict]]:
 
     out = []
     for g in groups:
-        qty_val, qty_bd = _reduce_source_values(g["quantity_by_src"])
-        if qty_bd:
-            label = f"Equipment · {g['name']}"
+        qty_val, reason = Q.resolve_with_reliability(g["quantity_by_src"], rel)
+        if len(g["quantity_by_src"]) > 1:
+            label = f"Equipment · {g['name']}".strip()
             if g["model"]:
                 label += f" {g['model']}"
-            conflicts.append(_conflict(f"{label} · quantity", qty_bd))
+            conflicts.append(_conflict(
+                f"{label} · quantity",
+                g["quantity_by_src"], rel,
+                resolved=qty_val, reason=reason,
+            ))
         out.append({
             "name":     g["name"],
             "model":    g["model"],
@@ -439,8 +446,7 @@ def _merge_equipment(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     return out, conflicts
 
 
-def _merge_materials(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Group by fuzzy (name, grade). Max quantity across sources."""
+def _merge_materials(rows, rel):
     groups: list[dict] = []
     conflicts: list[dict] = []
 
@@ -459,8 +465,7 @@ def _merge_materials(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         g = _find_fuzzy(groups, name, grade, ("name", "grade"))
         if g is None:
             g = {
-                "name": name, "grade": grade,
-                "unit": unit,
+                "name": name, "grade": grade, "unit": unit,
                 "location": (r.get("location") or "").strip(),
                 "notes": [note] if note else [],
                 "sources": [src] if src else [],
@@ -482,12 +487,16 @@ def _merge_materials(rows: list[dict]) -> tuple[list[dict], list[dict]]:
 
     out = []
     for g in groups:
-        qty_val, qty_bd = _reduce_source_values(g["quantity_by_src"])
-        if qty_bd:
+        qty_val, reason = Q.resolve_with_reliability(g["quantity_by_src"], rel)
+        if len(g["quantity_by_src"]) > 1:
             label = f"Materials · {g['name']}"
             if g["grade"]:
                 label += f" ({g['grade']})"
-            conflicts.append(_conflict(f"{label} · quantity", qty_bd))
+            conflicts.append(_conflict(
+                f"{label} · quantity",
+                g["quantity_by_src"], rel,
+                resolved=qty_val, reason=reason,
+            ))
         out.append({
             "name":     g["name"],
             "grade":    g["grade"],
@@ -500,8 +509,7 @@ def _merge_materials(rows: list[dict]) -> tuple[list[dict], list[dict]]:
     return out, conflicts
 
 
-def _merge_personnel(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Group by trade. Max count across sources."""
+def _merge_personnel(rows, rel):
     groups: dict[str, dict] = {}
     conflicts: list[dict] = []
 
@@ -538,9 +546,13 @@ def _merge_personnel(rows: list[dict]) -> tuple[list[dict], list[dict]]:
 
     out = []
     for trade, g in groups.items():
-        count_val, count_bd = _reduce_source_values(g["count_by_src"])
-        if count_bd:
-            conflicts.append(_conflict(f"Personnel · {trade} · count", count_bd))
+        count_val, reason = Q.resolve_with_reliability(g["count_by_src"], rel)
+        if len(g["count_by_src"]) > 1:
+            conflicts.append(_conflict(
+                f"Personnel · {trade} · count",
+                g["count_by_src"], rel,
+                resolved=count_val, reason=reason,
+            ))
         out.append({
             "trade":    g["trade"],
             "count":    fmt_num(count_val) if count_val is not None else "",
@@ -561,22 +573,25 @@ def _clean_strings(items: list) -> list[str]:
     return out
 
 
-def _personnel_cross_check(
-    work_rows: list[dict], personnel_rows: list[dict]
-) -> str | None:
-    """
-    Sum skilled + helpers across Work Progress, compare to Personnel totals.
-    Returns a note string if they diverge by more than 1, else None.
-    """
+def _header_conflicts(docs, header: dict) -> list[dict]:
+    """Detect temporal / structural conflicts in header fields."""
+    out = []
+    # Date conflict — this is the big one
+    dates = {}
+    for d in docs:
+        # stored on the per-file dict by aggregate(), not here — see caller
+        pass
+    return out
+
+
+def _personnel_cross_check(work_rows, personnel_rows) -> str | None:
     wp_total = 0
     for r in work_rows:
         wp_total += to_float(r.get("skilled")) or 0
         wp_total += to_float(r.get("helpers")) or 0
-
     pers_total = 0
     for r in personnel_rows:
         pers_total += to_float(r.get("count")) or 0
-
     if wp_total == 0 and pers_total == 0:
         return None
     diff = abs(wp_total - pers_total)
@@ -584,13 +599,13 @@ def _personnel_cross_check(
         return None
     return (
         f"Headcount cross-check: Work Progress totals {int(wp_total)}, "
-        f"Personnel section totals {int(pers_total)} — {int(diff)} difference. "
-        f"Verify source reports."
+        f"Personnel section totals {int(pers_total)} — "
+        f"{int(diff)} difference. Verify source reports."
     )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Public API — Pass 6 + 7 signature (backward compatible: all kwargs optional)
+# Public API
 # ═══════════════════════════════════════════════════════════════════════════
 def aggregate(
     docs: list[ExtractedDocument],
@@ -599,12 +614,6 @@ def aggregate(
     should_cancel: Callable[[], bool] | None = None,
     max_seconds: float | None = 600.0,
 ) -> AggregatedReport | None:
-    """
-    Two-pass aggregation.
-
-    Returns the AggregatedReport on success, or None if the run was
-    cancelled (by should_cancel) or tripped the wall-clock watchdog.
-    """
     def emit(kind: str, **payload) -> None:
         if on_event is None:
             return
@@ -652,6 +661,13 @@ def aggregate(
         emit("cancelled", reason=reason, phase="merge")
         return None
 
+    # ---- Compute source reliabilities ----------------------------------
+    reliabilities: dict[str, float] = {}
+    for d, data in zip(docs, per_file):
+        if "_error" not in data:
+            reliabilities[d.filename] = Q.source_reliability(d.filename, data)
+    print(f"[agg] reliabilities: {reliabilities}", flush=True)
+
     # ---- Pass 2: deterministic merge -----------------------------------
     emit("merge_start", num_files=total)
 
@@ -659,8 +675,9 @@ def aggregate(
     hse, qc, risks, plan = [], [], [], []
     incidents_parts = []
     header: dict = {}
+    date_sources: dict[str, list[str]] = {}
 
-    for data in per_file:
+    for d, data in zip(docs, per_file):
         if "_error" in data:
             continue
         work_rows  += [r for r in (data.get("work_progress") or []) if isinstance(r, dict)]
@@ -677,15 +694,34 @@ def aggregate(
                   "prepared_by", "weather", "shift"):
             if not header.get(k) and data.get(k):
                 header[k] = data[k]
+        rd = (data.get("report_date") or "").strip()
+        if rd:
+            date_sources.setdefault(rd, []).append(d.filename)
 
     print(f"[agg] pass 1 done; merging {len(work_rows)} work rows …", flush=True)
 
-    work_out,  work_conflicts  = _merge_work(work_rows)
-    equip_out, equip_conflicts = _merge_equipment(equip_rows)
-    mat_out,   mat_conflicts   = _merge_materials(mat_rows)
-    pers_out,  pers_conflicts  = _merge_personnel(pers_rows)
+    work_out,  work_conflicts  = _merge_work(work_rows, reliabilities)
+    equip_out, equip_conflicts = _merge_equipment(equip_rows, reliabilities)
+    mat_out,   mat_conflicts   = _merge_materials(mat_rows, reliabilities)
+    pers_out,  pers_conflicts  = _merge_personnel(pers_rows, reliabilities)
 
-    all_conflicts = work_conflicts + equip_conflicts + mat_conflicts + pers_conflicts
+    all_conflicts = (work_conflicts + equip_conflicts
+                     + mat_conflicts + pers_conflicts)
+
+    # Temporal conflict — if source dates disagree, flag it loudly
+    if len(date_sources) > 1:
+        all_conflicts.insert(0, {
+            "field": "Header · report_date",
+            "values": [
+                f"{d} ({', '.join(srcs)})"
+                for d, srcs in sorted(date_sources.items())
+            ],
+            "severity": "hard",
+            "type": "temporal",
+            "resolution": max(date_sources.keys()),
+            "reason": "source files report different dates — verify these "
+                      "belong to the same day",
+        })
 
     report = AggregatedReport(
         project_name  = header.get("project_name", ""),
@@ -707,6 +743,9 @@ def aggregate(
         conflicts        = all_conflicts,
     )
 
+    n_hard = sum(1 for c in all_conflicts if c.get("severity") == "hard")
+    n_soft = sum(1 for c in all_conflicts if c.get("severity") == "soft")
+
     report.notes.append(
         f"Merged {len(docs)} file(s) into "
         f"{len(report.work_progress)} work rows, "
@@ -717,10 +756,14 @@ def aggregate(
     failed = [d for d in per_file if "_error" in d]
     if failed:
         report.notes.append(f"{len(failed)} file(s) failed extraction.")
-    if all_conflicts:
+    if n_hard:
         report.notes.append(
-            f"{len(all_conflicts)} conflict(s) detected across source files — "
-            f"see banner above."
+            f"{n_hard} hard conflict(s) — sources materially disagree. "
+            f"Review before export."
+        )
+    if n_soft:
+        report.notes.append(
+            f"{n_soft} soft conflict(s) — auto-resolved within tolerance."
         )
 
     xcheck = _personnel_cross_check(report.work_progress, report.personnel)
@@ -729,7 +772,7 @@ def aggregate(
 
     print(
         f"[agg] done. {len(report.work_progress)} work rows, "
-        f"{len(all_conflicts)} conflict(s).",
+        f"{n_hard} hard / {n_soft} soft conflicts.",
         flush=True,
     )
 
