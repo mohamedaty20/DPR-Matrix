@@ -50,6 +50,22 @@ except Exception as e:
 
 
 setup_logging(settings.LOG_LEVEL)
+
+# Silence the cosmetic "Timer cancelled because client is not connected"
+# warnings that fire 60 s after any browser tab closes. The timers are
+# per-page and the message is expected — nothing is actually wrong.
+import logging as _logging
+
+class _TimerNoiseFilter(_logging.Filter):
+    _needle = "Timer cancelled because client is not connected"
+    def filter(self, record: _logging.LogRecord) -> bool:
+        try:
+            return self._needle not in record.getMessage()
+        except Exception:
+            return True
+
+_logging.getLogger("nicegui").addFilter(_TimerNoiseFilter())
+
 app.add_static_files("/assets", "assets")
 apply_theme()
 _log("theme applied")
@@ -115,11 +131,7 @@ def history_page():
 _log("routes registered")
 
 
-# ---------------------------------------------------------------------------
-# Boot sequence
-# ---------------------------------------------------------------------------
 def _safe_init_db() -> None:
-    """Try to init the DB. Never raises — Turso being down must not kill boot."""
     try:
         _log("calling init_db() …")
         init_db()
