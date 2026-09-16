@@ -26,6 +26,10 @@ def log_console() -> ui.html:
 
 
 # ── Table ────────────────────────────────────────────────────────────────
+# Columns we never render inside a table cell. `provenance` is a nested
+# dict — it belongs on the Reconcile page, not in a row of data.
+_HIDDEN_COLUMNS = {"provenance"}
+
 _NUMERIC_KEYS = {
     "quantity", "skilled", "helpers", "crew_total",
     "progress_pct", "count",
@@ -39,34 +43,29 @@ _CONFIDENCE_COLOR = {
 
 
 def _cell_html(key: str, value) -> str:
-    """Render one cell's inner HTML (no padding — that's on the <td>)."""
     if isinstance(value, list):
         value = ", ".join(str(x) for x in value)
 
-    # Confidence column → colored indicator
     if key == "confidence":
         v = str(value or "").strip().lower()
         color = _CONFIDENCE_COLOR.get(v, "#4f4f56")
         label = v.upper() if v else "—"
         return (
-            f'<span style="display:inline-flex;align-items:center;gap:6px;">'
+            f'<span style="display:inline-flex;align-items:center;gap:5px;">'
             f'<span style="width:6px;height:6px;border-radius:50%;'
-            f'background:{color};display:inline-block;"></span>'
+            f'background:{color};display:inline-block;flex:0 0 auto;"></span>'
             f'<span style="color:{color};font-weight:600;">{escape(label)}</span>'
             f'</span>'
         )
 
-    # Empty values → dim em dash
     s = str(value or "").strip()
     if not s:
         return '<span style="color:#3a3a42;">—</span>'
 
-    # Progress percent → append %
     if key == "progress_pct":
         return f'{escape(s)}<span style="color:#85858c;">%</span>'
 
-    # Sources / provenance lists → single dim line
-    if key in ("sources", "provenance"):
+    if key == "sources":
         return f'<span style="color:#85858c;">{escape(s)}</span>'
 
     return escape(s)
@@ -76,10 +75,11 @@ def _render_table(rows: list[dict]) -> None:
     if not rows:
         return
 
-    # Preserve column order from data
     keys: list[str] = []
     for r in rows:
         for k in r.keys():
+            if k in _HIDDEN_COLUMNS:
+                continue
             if k not in keys:
                 keys.append(k)
 
@@ -109,11 +109,12 @@ def _render_table(rows: list[dict]) -> None:
                 f'<td style="'
                 f'color:#e8e8ea;'
                 f'font-size:11.5px;'
-                f'line-height:1.35;'
-                f'padding:5px 8px;'
+                f'line-height:1.2;'
+                f'padding:4px 8px;'
                 f'text-align:{align};'
                 f'border-bottom:1px solid rgba(34,197,94,0.06);'
                 f'vertical-align:middle;'
+                f'white-space:nowrap;'
                 f'">{_cell_html(k, r.get(k, ""))}</td>'
             )
         body += f'<tr style="background:{bg};">{cells}</tr>'
@@ -123,7 +124,7 @@ def _render_table(rows: list[dict]) -> None:
         'border:1px solid rgba(34,197,94,0.18);border-radius:8px;'
         'margin-top:8px;">'
         '<table style="border-collapse:collapse;background:#0a0a0a;'
-        'width:100%;min-width:100%;">'
+        'width:100%;">'
         f'<thead><tr>{head}</tr></thead>'
         f'<tbody>{body}</tbody>'
         '</table></div>'
