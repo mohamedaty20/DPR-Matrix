@@ -112,7 +112,6 @@ def norm_unit(s: str) -> str:
         "kg": "kg", "kgs": "kg", "kilogram": "kg", "kilograms": "kg",
         "ton": "t", "tons": "t", "t": "t",
         "bag": "bags", "bags": "bags",
-        "worker": "workers", "workers": "workers",
         "nos": "nos", "no": "nos", "units": "nos", "unit": "nos", "pcs": "nos",
     }
     return mapping.get(s, s)
