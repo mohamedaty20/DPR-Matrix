@@ -41,16 +41,21 @@ RULE 2 — Helper counts belong in the "helpers" field. NEVER in the floor.
    ✓ building="70", floor="4", helpers=1
    ✗ floor="4 + 1 helper"
 
-RULE 3 — Skilled workers and helpers are separate counters.
-   "10 workers + 3 helpers" → quantity=10, skilled=10, helpers=3, unit="workers"
-   "13 masons + 2 helpers"  → quantity=13, skilled=13, helpers=2, unit="workers"
-   "5 workers"              → quantity=5,  skilled=5,  helpers=0, unit="workers"
-   "4"                      → quantity=4,  skilled=4,  helpers=0, unit="workers"
+RULE 3 — Workforce goes in "skilled" and "helpers" ONLY. Never in "quantity".
+   "10 workers + 3 helpers" → skilled=10, helpers=3, quantity="", unit=""
+   "13 masons + 2 helpers"  → skilled=13, helpers=2, quantity="", unit=""
+   "5 workers"              → skilled=5,  helpers=0, quantity="", unit=""
+   "4"                      → skilled=4,  helpers=0, quantity="", unit=""
 
-RULE 4 — Quantity and unit are separate fields.
-   "15 m²"      → quantity=15,  unit="m2"
-   "3 m³"       → quantity=3,   unit="m3"
-   "200 bags"   → quantity=200, unit="bags"
+RULE 4 — "quantity" is a WORK or MATERIAL measurement, never a headcount.
+   Only fill "quantity" when the source gives a measurable amount:
+   "15 m²"      → quantity=15,  unit="m2",  skilled="", helpers=""
+   "3 m³"       → quantity=3,   unit="m3",  skilled="", helpers=""
+   "200 bags"   → quantity=200, unit="bags", skilled="", helpers=""
+   If a row has BOTH crew and work quantity, fill both.
+   Example: "10 workers + 3 helpers completed 15 m²"
+     → skilled=10, helpers=3, quantity=15, unit="m2"
+   If no work quantity is given, leave quantity="" and unit="".
 
 RULE 5 — Building and floor are separate fields.
    "Building No 53, Floor No 2" → building="53", floor="2"
