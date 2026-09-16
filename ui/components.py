@@ -26,38 +26,107 @@ def log_console() -> ui.html:
 
 
 # ── Table ────────────────────────────────────────────────────────────────
+_NUMERIC_KEYS = {
+    "quantity", "skilled", "helpers", "crew_total",
+    "progress_pct", "count",
+}
+
+_CONFIDENCE_COLOR = {
+    "high":   "#22c55e",
+    "medium": "#ffb020",
+    "low":    "#ff4d6a",
+}
+
+
+def _cell_html(key: str, value) -> str:
+    """Render one cell's inner HTML (no padding — that's on the <td>)."""
+    if isinstance(value, list):
+        value = ", ".join(str(x) for x in value)
+
+    # Confidence column → colored indicator
+    if key == "confidence":
+        v = str(value or "").strip().lower()
+        color = _CONFIDENCE_COLOR.get(v, "#4f4f56")
+        label = v.upper() if v else "—"
+        return (
+            f'<span style="display:inline-flex;align-items:center;gap:6px;">'
+            f'<span style="width:6px;height:6px;border-radius:50%;'
+            f'background:{color};display:inline-block;"></span>'
+            f'<span style="color:{color};font-weight:600;">{escape(label)}</span>'
+            f'</span>'
+        )
+
+    # Empty values → dim em dash
+    s = str(value or "").strip()
+    if not s:
+        return '<span style="color:#3a3a42;">—</span>'
+
+    # Progress percent → append %
+    if key == "progress_pct":
+        return f'{escape(s)}<span style="color:#85858c;">%</span>'
+
+    # Sources / provenance lists → single dim line
+    if key in ("sources", "provenance"):
+        return f'<span style="color:#85858c;">{escape(s)}</span>'
+
+    return escape(s)
+
+
 def _render_table(rows: list[dict]) -> None:
     if not rows:
         return
+
+    # Preserve column order from data
     keys: list[str] = []
     for r in rows:
         for k in r.keys():
             if k not in keys:
                 keys.append(k)
+
     head = "".join(
-        f'<th style="color:#22c55e;font-weight:700;padding:8px 10px;'
-        f'text-align:left;background:#0a1f12;'
-        f'border-bottom:2px solid #22c55e;white-space:nowrap;">'
-        f'{escape(k.replace("_", " ").title())}</th>' for k in keys
+        f'<th style="'
+        f'color:#22c55e;'
+        f'font-weight:600;'
+        f'font-size:10px;'
+        f'letter-spacing:0.06em;'
+        f'text-transform:uppercase;'
+        f'padding:6px 8px;'
+        f'text-align:{"right" if k in _NUMERIC_KEYS else "left"};'
+        f'background:#0a1f12;'
+        f'border-bottom:1px solid #22c55e;'
+        f'white-space:nowrap;'
+        f'">{escape(k.replace("_", " "))}</th>'
+        for k in keys
     )
+
     body = ""
-    for r in rows:
+    for i, r in enumerate(rows):
+        bg = "#0a0a0a" if i % 2 == 0 else "#0b0d0e"
         cells = ""
         for k in keys:
-            v = r.get(k, "")
-            if isinstance(v, list):
-                v = ", ".join(str(x) for x in v)
+            align = "right" if k in _NUMERIC_KEYS else "left"
             cells += (
-                f'<td style="color:#ffffff;padding:6px 10px;'
-                f'border-bottom:1px solid #1a2e22;vertical-align:top;">'
-                f'{escape(str(v))}</td>'
+                f'<td style="'
+                f'color:#e8e8ea;'
+                f'font-size:11.5px;'
+                f'line-height:1.35;'
+                f'padding:5px 8px;'
+                f'text-align:{align};'
+                f'border-bottom:1px solid rgba(34,197,94,0.06);'
+                f'vertical-align:middle;'
+                f'">{_cell_html(k, r.get(k, ""))}</td>'
             )
-        body += f'<tr style="background:#0a0a0a;">{cells}</tr>'
+        body += f'<tr style="background:{bg};">{cells}</tr>'
+
     ui.html(
         '<div style="overflow-x:auto;background:#0a0a0a;'
-        'border:1px solid #00FF66;border-radius:4px;margin-top:6px;">'
-        '<table style="width:100%;border-collapse:collapse;background:#0a0a0a;">'
-        f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+        'border:1px solid rgba(34,197,94,0.18);border-radius:8px;'
+        'margin-top:8px;">'
+        '<table style="border-collapse:collapse;background:#0a0a0a;'
+        'width:100%;min-width:100%;">'
+        f'<thead><tr>{head}</tr></thead>'
+        f'<tbody>{body}</tbody>'
+        '</table></div>'
     ).classes("w-full")
 
 
@@ -140,7 +209,6 @@ def metadata_strip(items: list[tuple[str, str]]) -> None:
 
 
 def stat_grid(items: list[dict]) -> None:
-    """items: [{"label","value","sub","tone"}], tone ∈ {"", primary, warning, danger}"""
     cards = ""
     for it in items:
         tone = f" dpr-stat-{it['tone']}" if it.get("tone") else ""
@@ -158,31 +226,13 @@ def stat_grid(items: list[dict]) -> None:
     ui.html(f'<div class="dpr-stat-grid">{cards}</div>').classes("w-full")
 
 
-def panel(
-    title: str,
-    *,
-    subtitle: str = "",
-    total: str = "",
-    total_label: str = "",
-    wide: bool = False,
-    empty: str = "",
-):
-    """
-    Context manager. Renders a chart panel; inside, call bar_list / ratio_bars /
-    histogram / matrix / top_list to fill it.
-    """
-    cls = "dpr-panel dpr-panel-wide" if wide else "dpr-panel"
-    return _PanelCtx(cls, title, subtitle, total, total_label, empty)
-
-
 class _PanelCtx:
-    def __init__(self, cls, title, subtitle, total, total_label, empty):
+    def __init__(self, cls, title, subtitle, total, total_label):
         self.cls = cls
         self.title = title
         self.subtitle = subtitle
         self.total = total
         self.total_label = total_label
-        self.empty = empty
         self._cm = None
 
     def __enter__(self):
@@ -211,10 +261,11 @@ class _PanelCtx:
     def __exit__(self, exc_type, exc, tb):
         return self._cm.__exit__(exc_type, exc, tb)
 
-    def message(self, msg: str) -> None:
-        ui.html(
-            f'<div class="dpr-panel-empty">{escape(msg)}</div>'
-        )
+
+def panel(title: str, *, subtitle: str = "", total: str = "",
+          total_label: str = "", wide: bool = False, empty: str = ""):
+    cls = "dpr-panel dpr-panel-wide" if wide else "dpr-panel"
+    return _PanelCtx(cls, title, subtitle, total, total_label)
 
 
 def bar_list(items: list[tuple[str, float | int]],
@@ -223,7 +274,6 @@ def bar_list(items: list[tuple[str, float | int]],
         return
     total = sum(float(v) for _, v in items) or 1
     max_val = max((float(v) for _, v in items), default=0) or 1
-
     rows = ""
     for label, value in items:
         v = float(value)
@@ -245,10 +295,6 @@ def bar_list(items: list[tuple[str, float | int]],
 
 
 def ratio_bars(items: list[tuple[str, float, float, float]]) -> None:
-    """
-    items: [(label, skilled_pct, helpers_pct, total), ...]
-    Renders stacked skilled|helpers bar per row.
-    """
     if not items:
         return
     rows = ""
@@ -271,14 +317,13 @@ def ratio_bars(items: list[tuple[str, float, float, float]]) -> None:
         '  <span><span class="dpr-ratio-dot" '
         '     style="background:var(--dpr-primary)"></span>Skilled</span>'
         '  <span><span class="dpr-ratio-dot" '
-        '     style="background:rgba(0,255,102,0.28)"></span>Helpers</span>'
+        '     style="background:rgba(34,197,94,0.28)"></span>Helpers</span>'
         '</div>'
     )
     ui.html(rows + legend).classes("w-full")
 
 
 def histogram(buckets: list[tuple[str, int]]) -> None:
-    """buckets: [(label, count), ...]. Bar height = count/max."""
     if not buckets:
         return
     mx = max((c for _, c in buckets), default=0) or 1
@@ -298,50 +343,37 @@ def histogram(buckets: list[tuple[str, int]]) -> None:
 
 
 def matrix_view(data: dict) -> None:
-    """
-    data from analytics.activity_matrix():
-      {"activities": [...], "buildings": [...], "matrix": {...}, "max": int}
-    """
     acts = data["activities"]
     bldgs = data["buildings"]
     mat = data["matrix"]
     mx = data["max"] or 1
-
     if not acts or not bldgs:
         return
-
-    # Header row: blank + activities
-    n_cols = len(acts) + 1
-    grid_style = f"grid-template-columns: 120px repeat({len(acts)}, minmax(56px, 1fr));"
-
+    grid_style = (
+        f"grid-template-columns: 120px repeat({len(acts)}, minmax(56px, 1fr));"
+    )
     html = f'<div class="dpr-matrix" style="{grid_style}">'
     html += '<div class="dpr-matrix-head"></div>'
     for a in acts:
         html += f'<div class="dpr-matrix-head">{escape(a)}</div>'
-
     for b in bldgs:
         html += f'<div class="dpr-matrix-row-head">Building {escape(b)}</div>'
         for a in acts:
             v = mat.get(b, {}).get(a, 0)
             if v == 0:
-                html += (
-                    '<div class="dpr-matrix-cell" '
-                    'style="background:rgba(255,255,255,0.02);color:#4f4f56;">'
-                    '·</div>'
-                )
+                html += ('<div class="dpr-matrix-cell" '
+                         'style="background:rgba(255,255,255,0.02);'
+                         'color:#4f4f56;">·</div>')
             else:
                 intensity = min(0.10 + (v / mx) * 0.55, 0.75)
-                html += (
-                    f'<div class="dpr-matrix-cell" '
-                    f'style="background:rgba(0,255,102,{intensity:.2f});">'
-                    f'{v}</div>'
-                )
+                html += (f'<div class="dpr-matrix-cell" '
+                         f'style="background:rgba(34,197,94,{intensity:.2f});">'
+                         f'{v}</div>')
     html += "</div>"
     ui.html(html).classes("w-full")
 
 
 def top_list(items: list[tuple[str, str | int]], *, start: int = 1) -> None:
-    """items: [(name, value), ...]"""
     if not items:
         return
     rows = ""
