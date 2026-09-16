@@ -1,21 +1,58 @@
 import os
-from nicegui import ui, app
-from fastapi import Response
+import sys
 
-from config import settings
-from utils.logging_config import setup_logging
-from ui.theme import apply_theme
-from core.db import init_db
+def _log(msg: str) -> None:
+    print(f"[boot] {msg}", flush=True)
 
-from ui.pages.home import render as render_home
-from ui.pages.results import render as render_results
-from ui.pages.history import render as render_history
+_log("python starting")
+_log(f"port from env: {os.environ.get('PORT', '(unset)')}")
+
+# ---------------------------------------------------------------------------
+# Import phase — log each step so a crash here is pinpointable
+# ---------------------------------------------------------------------------
+try:
+    from nicegui import ui, app
+    _log("imported nicegui")
+except Exception as e:
+    _log(f"FATAL: nicegui import failed: {type(e).__name__}: {e}")
+    sys.exit(1)
+
+try:
+    from fastapi import Response
+    from config import settings
+    _log(f"config loaded · model={settings.GEMINI_MODEL} · "
+         f"turso={settings.TURSO_URL[:40]}…")
+except Exception as e:
+    _log(f"FATAL: config import failed: {type(e).__name__}: {e}")
+    sys.exit(1)
+
+try:
+    from utils.logging_config import setup_logging
+    from ui.theme import apply_theme
+    from ui.pages.home import render as render_home
+    from ui.pages.results import render as render_results
+    from ui.pages.history import render as render_history
+    _log("imported ui + pages")
+except Exception as e:
+    _log(f"FATAL: ui import failed: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+
+try:
+    from core.db import init_db
+    _log("imported core.db")
+except Exception as e:
+    _log(f"FATAL: core.db import failed: {type(e).__name__}: {e}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
 
 
 setup_logging(settings.LOG_LEVEL)
 app.add_static_files("/assets", "assets")
-
 apply_theme()
+_log("theme applied")
 
 
 @app.get("/healthz")
@@ -38,18 +75,41 @@ def history_page():
     render_history()
 
 
-if __name__ in {"__main__", "__mp_main__"}:
-    try:
-        init_db()
-    except Exception as e:
-        print(f"[warn] DB init failed: {e}")
+_log("routes registered")
 
-    ui.run(
-        host="0.0.0.0",
-        port=int(os.environ.get("PORT", 8080)),
-        title="DPR-Matrix",
-        favicon="📋",
-        reload=False,
-        show=False,
-        storage_secret=settings.STORAGE_SECRET,
-    )
+
+# ---------------------------------------------------------------------------
+# Boot sequence
+# ---------------------------------------------------------------------------
+def _safe_init_db() -> None:
+    """Try to init the DB. Never raises — Turso being down must not kill boot."""
+    try:
+        _log("calling init_db() …")
+        init_db()
+        _log("init_db() done")
+    except Exception as e:
+        _log(f"WARN: init_db failed: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ in {"__main__", "__mp_main__"}:
+    _safe_init_db()
+
+    _log("about to call ui.run()")
+    try:
+        ui.run(
+            host="0.0.0.0",
+            port=int(os.environ.get("PORT", 8080)),
+            title="DPR-Matrix",
+            favicon="📋",
+            reload=False,
+            show=False,
+            storage_secret=settings.STORAGE_SECRET,
+        )
+        _log("ui.run() returned cleanly")
+    except Exception as e:
+        _log(f"FATAL: ui.run() crashed: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
