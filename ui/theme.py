@@ -650,6 +650,96 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 }
 </style>
 """
+/* ═══════════════════════════════════════════════════════════════════
+   Zone Progress Board
+   ═══════════════════════════════════════════════════════════════════ */
+.dpr-zone-legend {
+  display: flex; flex-wrap: wrap; gap: 10px 18px;
+  padding: 12px 16px;
+  background: #0c0c0f;
+  border: 1px solid var(--dpr-border);
+  border-radius: var(--dpr-radius);
+  margin-bottom: 14px;
+}
+.dpr-zone-legend-item {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--dpr-text-muted) !important;
+  font-size: 11px; font-weight: 500;
+}
+.dpr-zone-legend-swatch {
+  width: 10px; height: 10px; border-radius: 3px;
+  display: inline-block; flex: 0 0 auto;
+}
+
+.dpr-zone-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px; margin-bottom: 18px; width: 100%;
+}
+.dpr-zone-summary-cell {
+  background: linear-gradient(180deg, #121216 0%, #08080a 100%);
+  border: 1px solid var(--dpr-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.dpr-zone-summary-label {
+  font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase;
+  font-weight: 600;
+}
+.dpr-zone-summary-value {
+  color: var(--dpr-text) !important;
+  font-size: 20px; font-weight: 700; line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.dpr-zone-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px; width: 100%;
+}
+.dpr-zone-card {
+  background: linear-gradient(180deg, #121216 0%, #08080a 100%);
+  border: 1px solid var(--dpr-border);
+  border-left: 3px solid var(--dpr-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  transition: border-color .12s ease, transform .12s ease;
+  min-height: 118px;
+}
+.dpr-zone-card:hover {
+  border-color: var(--dpr-border-hover);
+  transform: translateY(-1px);
+}
+.dpr-zone-id {
+  color: var(--dpr-text) !important;
+  font-size: 13px; font-weight: 700;
+  letter-spacing: -0.005em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.dpr-zone-stage-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  border: 1px solid transparent;
+  align-self: flex-start;
+}
+.dpr-zone-meta {
+  color: var(--dpr-text-dim) !important;
+  font-size: 10.5px; line-height: 1.4;
+  margin-top: auto;
+}
+.dpr-zone-empty {
+  padding: 40px 20px; text-align: center;
+  color: var(--dpr-text-muted) !important;
+  font-size: 13px;
+  background: #0c0c0f;
+  border: 1px dashed var(--dpr-border-hover);
+  border-radius: var(--dpr-radius);
+}
+.dpr-zone-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 
 def apply_theme() -> None:
