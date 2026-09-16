@@ -1,6 +1,5 @@
 """Deterministic normalization — the same input from different people
-must collapse into the same key. Runs BEFORE merge, so Python does the
-grouping, not the LLM."""
+must collapse to the same key. Runs BEFORE merge."""
 from __future__ import annotations
 import re
 
@@ -40,34 +39,39 @@ def norm_floor(s: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Activities: controlled vocabulary so "Mortaring" == "Mortar works"
+# Activities: controlled vocabulary
 # ---------------------------------------------------------------------------
 _ACTIVITY_SYNONYMS: dict[str, str] = {
-    "mortar":     "Mortar works",
-    "mortaring":  "Mortar works",
-    "masonry":    "Mortar works",
-    "plaster":    "Plastering",
-    "plastering": "Plastering",
-    "brick":      "Brickworks",
-    "bricks":     "Brickworks",
-    "brickwork":  "Brickworks",
-    "brickworks": "Brickworks",
-    "bricklaying":"Brickworks",
-    "sealer":     "Sealer works",
-    "sealing":    "Sealer works",
-    "paint":      "Painting",
-    "painting":   "Painting",
-    "tile":       "Tiling",
-    "tiling":     "Tiling",
-    "steel":      "Steel fixing",
-    "rebar":      "Steel fixing",
-    "concrete":   "Concrete works",
-    "concreting": "Concrete works",
-    "formwork":   "Formwork",
-    "carpentry":  "Carpentry",
-    "electric":   "Electrical",
-    "electrical": "Electrical",
-    "plumbing":   "Plumbing",
+    "mortar":       "Mortar works",
+    "mortaring":    "Mortar works",
+    "masonry":      "Mortar works",
+    "plaster":      "Plastering",
+    "plastering":   "Plastering",
+    "brick":        "Brickworks",
+    "bricks":       "Brickworks",
+    "brickwork":    "Brickworks",
+    "brickworks":   "Brickworks",
+    "bricklaying":  "Brickworks",
+    "sealer":       "Sealer works",
+    "sealing":      "Sealer works",
+    "paint":        "Painting",
+    "painting":     "Painting",
+    "tile":         "Tiling",
+    "tiling":       "Tiling",
+    "steel":        "Steel fixing",
+    "rebar":        "Steel fixing",
+    "concrete":     "Concrete works",
+    "concreting":   "Concrete works",
+    "formwork":     "Formwork",
+    "carpentry":    "Carpentry",
+    "electric":     "Electrical",
+    "electrical":   "Electrical",
+    "plumbing":     "Plumbing",
+    "excavation":   "Excavation",
+    "backfilling":  "Backfilling",
+    "waterproofing":"Waterproofing",
+    "gypsum":       "Gypsum works",
+    "ceiling":      "Ceiling works",
 }
 
 
@@ -97,7 +101,7 @@ def to_float(v) -> float | None:
     return float(m.group(0)) if m else None
 
 
-def fmt_num(n: float) -> str:
+def fmt_num(n: float | None) -> str:
     if n is None:
         return ""
     return str(int(n)) if float(n).is_integer() else f"{n:g}"
@@ -113,5 +117,6 @@ def norm_unit(s: str) -> str:
         "ton": "t", "tons": "t", "t": "t",
         "bag": "bags", "bags": "bags",
         "nos": "nos", "no": "nos", "units": "nos", "unit": "nos", "pcs": "nos",
+        "liter": "L", "liters": "L", "litre": "L", "litres": "L", "l": "L",
     }
     return mapping.get(s, s)
