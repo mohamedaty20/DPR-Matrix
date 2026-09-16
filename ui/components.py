@@ -11,35 +11,28 @@ def section_title(text: str) -> None:
 
 def log_console() -> ui.html:
     html = ui.html("").classes("dpr-console w-full")
-
     def refresh():
         html.content = "<br>".join(state.logs()[-80:]) or "— awaiting input —"
-
     ui.timer(1.0, refresh)
     refresh()
     return html
 
 
-def _row_table(rows: list[dict]) -> None:
-    """Render a plain-HTML table — bypasses Quasar's white-on-white defaults."""
+def _render_table(rows: list[dict]) -> None:
     if not rows:
         return
     from html import escape as _esc
-
     keys: list[str] = []
     for r in rows:
         for k in r.keys():
             if k not in keys:
                 keys.append(k)
-
     head = "".join(
         f'<th style="color:#00FF66;font-weight:700;padding:8px 10px;'
         f'text-align:left;background:#001a0a;'
         f'border-bottom:2px solid #00FF66;white-space:nowrap;">'
-        f'{_esc(k.replace("_", " ").title())}</th>'
-        for k in keys
+        f'{_esc(k.replace("_", " ").title())}</th>' for k in keys
     )
-
     body = ""
     for r in rows:
         cells = ""
@@ -53,21 +46,15 @@ def _row_table(rows: list[dict]) -> None:
                 f'{_esc(str(v))}</td>'
             )
         body += f'<tr style="background:#0a0a0a;">{cells}</tr>'
-
-    html = (
+    ui.html(
         '<div style="overflow-x:auto;background:#0a0a0a;'
         'border:1px solid #00FF66;border-radius:4px;margin-top:6px;">'
         '<table style="width:100%;border-collapse:collapse;background:#0a0a0a;">'
-        f'<thead><tr>{head}</tr></thead>'
-        f'<tbody>{body}</tbody>'
-        '</table></div>'
-    )
-    ui.html(html).classes("w-full")
+        f'<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+    ).classes("w-full")
 
 
-def _bullet_list(items: list) -> None:
-    if not items:
-        return
+def _bullets(items: list) -> None:
     for it in items:
         if isinstance(it, dict):
             text = " · ".join(f"{k}: {v}" for k, v in it.items()
@@ -98,19 +85,18 @@ def report_preview() -> None:
     kv("Location", rpt.site_location)
     kv("Prepared By", rpt.prepared_by)
     kv("Weather", rpt.weather)
+    kv("Shift", rpt.shift)
 
-    # Structured sections → table
     for title, rows in [
-        ("Personnel on Site", rpt.personnel_on_site),
-        ("Work Progress",     rpt.work_progress),
-        ("Equipment",         rpt.equipment),
-        ("Materials",         rpt.materials),
+        ("Work Progress", rpt.work_progress),
+        ("Equipment",     rpt.equipment),
+        ("Materials",     rpt.materials),
+        ("Personnel",     rpt.personnel),
     ]:
         if rows:
             ui.label(title).classes("dpr-title")
-            _row_table(rows)
+            _render_table(rows)
 
-    # Free-text sections → bullets
     for title, items in [
         ("HSE Observations", rpt.hse_observations),
         ("Quality Checks",   rpt.quality_checks),
@@ -119,7 +105,7 @@ def report_preview() -> None:
     ]:
         if items:
             ui.label(title).classes("dpr-title")
-            _bullet_list(items)
+            _bullets(items)
 
     if rpt.incidents:
         ui.label("Incidents").classes("dpr-title")
