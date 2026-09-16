@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import threading
 import uuid
+from datetime import datetime
 
 from nicegui import app
 
@@ -10,32 +11,8 @@ from core.models import ExtractedDocument, AggregatedReport
 
 _KEY = "dpr_matrix"
 
-# ---------------------------------------------------------------------------
-# In-process byte registry.
-#
-# app.storage.user is JSON-serialised, so raw bytes cannot live there.
-# Single-worker NiceGUI → a module-level dict is safe and never pickled.
-# Bytes are freed on remove_queued() / clear_queue().
-# ---------------------------------------------------------------------------
 _FILE_BYTES: dict[str, bytes] = {}
-
-# ---------------------------------------------------------------------------
-# Cooperative cancel flag for the current aggregation job.
-#
-# NOTE: this is process-global, not per-session. That matches the current
-# single-worker, effectively single-user deployment. If DPR-Matrix ever
-# becomes multi-tenant, move this into a per-session dict keyed on
-# app.storage.browser["id"].
-# ---------------------------------------------------------------------------
 _CANCEL = threading.Event()
-
-# ---------------------------------------------------------------------------
-# Thread-safe event queue.
-#
-# aggregate() runs in a worker thread (run.io_bound). It must not touch
-# NiceGUI storage directly. It pushes events here; a UI timer drains them
-# on the event loop and updates the log + file badges.
-# ---------------------------------------------------------------------------
 _EVENTS: list[tuple[str, dict]] = []
 _EVENTS_LOCK = threading.Lock()
 
@@ -44,17 +21,15 @@ def _bucket() -> dict:
     store = app.storage.user
     if _KEY not in store:
         store[_KEY] = {
-            "docs": [],
-            "report": None,
-            "report_id": None,
-            "logs": [],
-            "queue": [],
+            "docs": [], "report": None, "report_id": None,
+            "logs": [], "queue": [], "zones": {},
         }
     store[_KEY].setdefault("queue", [])
+    store[_KEY].setdefault("zones", {})
     return store[_KEY]
 
 
-# ── Docs (kept for export / history compatibility) ────────────────────────
+# ── Docs ──────────────────────────────────────────────────────────────────
 def add_doc(doc: ExtractedDocument) -> None:
     _bucket()["docs"].append(doc)
 
@@ -90,7 +65,7 @@ def logs() -> list[str]:
     return _bucket()["logs"]
 
 
-# ── File Queue ────────────────────────────────────────────────────────────
+# ── File queue ────────────────────────────────────────────────────────────
 def queue_files() -> list[dict]:
     return _bucket()["queue"]
 
@@ -98,12 +73,8 @@ def enqueue(name: str, data: bytes, mime: str = "") -> str:
     token = uuid.uuid4().hex
     _FILE_BYTES[token] = data
     _bucket()["queue"].append({
-        "token":  token,
-        "name":   name,
-        "size":   len(data),
-        "mime":   mime,
-        "status": "queued",   # queued | extracting | done | error
-        "error":  "",
+        "token": token, "name": name, "size": len(data),
+        "mime": mime, "status": "queued", "error": "",
     })
     return token
 
@@ -128,7 +99,7 @@ def set_status(token: str, status: str, error: str = "") -> None:
             return
 
 
-# ── Cancel flag ───────────────────────────────────────────────────────────
+# ── Cancel ────────────────────────────────────────────────────────────────
 def request_cancel() -> None:
     _CANCEL.set()
 
@@ -139,7 +110,7 @@ def clear_cancel() -> None:
     _CANCEL.clear()
 
 
-# ── Event queue (called from worker threads) ──────────────────────────────
+# ── Event queue ───────────────────────────────────────────────────────────
 def push_event(kind: str, **payload) -> None:
     with _EVENTS_LOCK:
         _EVENTS.append((kind, payload))
@@ -155,9 +126,32 @@ def clear_events() -> None:
         _EVENTS.clear()
 
 
+# ── Zone registry ─────────────────────────────────────────────────────────
+def zones() -> dict[str, dict]:
+    return _bucket()["zones"]
+
+def set_zone_stage(zone_id: str, stage: str, note: str = "") -> None:
+    z = zones()
+    entry = z.get(zone_id) or {"stage": "not_started", "note": "", "updated": ""}
+    entry["stage"] = stage
+    if note:
+        entry["note"] = note
+    entry["updated"] = datetime.now().isoformat(timespec="seconds")
+    z[zone_id] = entry
+
+def ensure_zones(zone_ids: list[str]) -> None:
+    z = zones()
+    for zid in zone_ids:
+        if zid and zid not in z:
+            z[zid] = {"stage": "not_started", "note": "", "updated": ""}
+
+def reset_zones() -> None:
+    _bucket()["zones"] = {}
+
+
 # ── Reset ─────────────────────────────────────────────────────────────────
 def reset() -> None:
-    """Clear docs / report / logs / events. Does NOT touch the file queue."""
+    """Clear docs / report / logs / events. Keeps queue and zones."""
     _bucket().update({
         "docs": [], "report": None, "report_id": None, "logs": [],
     })
