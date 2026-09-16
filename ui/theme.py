@@ -27,13 +27,11 @@ CSS = """
   --dpr-sidebar-w:     232px;
 }
 
-/* ── Base background ──────────────────────────────────────────────── */
 html, body, #app, .nicegui-content, .q-page-container, .q-page {
   background: var(--dpr-bg) !important;
   color: var(--dpr-text) !important;
 }
 
-/* ── Font: apply to text elements ONLY (never `*`) ────────────────── */
 html, body {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
   -webkit-font-smoothing: antialiased;
@@ -50,11 +48,14 @@ body, .q-page, .q-card, .q-btn, .q-field, .q-item, .q-label,
 .dpr-matrix-head, .dpr-matrix-row-head, .dpr-matrix-cell,
 .dpr-badge, .dpr-queue-name, .dpr-queue-size,
 .dpr-section-subtitle, .dpr-topbar-crumb,
-.dpr-app-title, .dpr-app-subtitle, .dpr-title, .dpr-muted {
+.dpr-app-title, .dpr-app-subtitle, .dpr-title, .dpr-muted,
+.dpr-zone-legend, .dpr-zone-legend-item,
+.dpr-zone-summary, .dpr-zone-summary-cell, .dpr-zone-summary-label,
+.dpr-zone-summary-value, .dpr-zone-grid, .dpr-zone-card, .dpr-zone-id,
+.dpr-zone-stage-badge, .dpr-zone-meta, .dpr-zone-empty, .dpr-zone-row {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
 }
 
-/* ── Icons MUST keep their own font — do NOT override ─────────────── */
 .q-icon, .material-icons, .material-icons-outlined,
 .material-icons-round, .material-icons-sharp,
 .material-symbols-outlined, .material-symbols-rounded,
@@ -67,7 +68,6 @@ body, .q-page, .q-card, .q-btn, .q-field, .q-item, .q-label,
   font-weight: normal !important;
 }
 
-/* ── Header / general typography ──────────────────────────────────── */
 h1, h2, h3, h4, h5, h6 { color: var(--dpr-text) !important; font-weight: 600 !important; }
 p, span, div, label, li, td, th,
 .q-label, .q-field__label, .q-field__native,
@@ -101,7 +101,6 @@ p, span, div, label, li, td, th,
 .dpr-muted { color: var(--dpr-text-muted) !important; font-size: 12px; }
 .dpr-mono  { font-family: 'JetBrains Mono', monospace !important; font-size: 13px; }
 
-/* ── Card ─────────────────────────────────────────────────────────── */
 .q-card, .q-card__section, .dpr-card {
   background: linear-gradient(180deg, var(--dpr-surface) 0%, #08080a 100%) !important;
   border: 1px solid var(--dpr-border) !important;
@@ -111,7 +110,6 @@ p, span, div, label, li, td, th,
   padding: 18px 20px !important;
 }
 
-/* ── Buttons ──────────────────────────────────────────────────────── */
 .q-btn, button.q-btn {
   background: transparent !important;
   color: var(--dpr-text) !important;
@@ -169,10 +167,8 @@ p, span, div, label, li, td, th,
   background: rgba(255,77,106,0.06) !important;
 }
 
-/* ── Separators ───────────────────────────────────────────────────── */
 .q-separator { background: var(--dpr-border) !important; height: 1px !important; }
 
-/* ── Inputs / Upload ──────────────────────────────────────────────── */
 .q-field__control, .q-field__control:before, .q-field__control:after {
   border-color: var(--dpr-border) !important;
   background: var(--dpr-surface-2) !important;
@@ -194,7 +190,6 @@ p, span, div, label, li, td, th,
 .q-uploader__list { background: var(--dpr-surface-2) !important; }
 .q-uploader__file { color: var(--dpr-text) !important; }
 
-/* ── Progress bar ─────────────────────────────────────────────────── */
 .q-linear-progress {
   background: var(--dpr-surface-2) !important;
   border-radius: 999px !important;
@@ -204,7 +199,6 @@ p, span, div, label, li, td, th,
 .q-linear-progress__track { background: var(--dpr-surface-2) !important; }
 .q-linear-progress__model { background: var(--dpr-primary) !important; }
 
-/* ── Tables (Quasar) ──────────────────────────────────────────────── */
 .q-table, .q-table td, .q-table th {
   color: var(--dpr-text) !important;
   background: transparent !important;
@@ -212,11 +206,9 @@ p, span, div, label, li, td, th,
 }
 .q-table thead th { color: var(--dpr-primary) !important; font-weight: 600 !important; }
 
-/* ── Links ────────────────────────────────────────────────────────── */
 a { color: var(--dpr-primary) !important; text-decoration: none; }
 a:hover { color: var(--dpr-primary-dim) !important; }
 
-/* ── Console ──────────────────────────────────────────────────────── */
 .dpr-console {
   background: #06060a !important;
   border: 1px solid var(--dpr-border) !important;
@@ -231,7 +223,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   white-space: pre-wrap;
 }
 
-/* ── Badges ───────────────────────────────────────────────────────── */
 .dpr-badge {
   display: inline-flex; align-items: center;
   padding: 3px 9px; border-radius: 999px;
@@ -250,7 +241,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 .dpr-badge-error      { color: var(--dpr-danger)  !important;
   border-color: rgba(255,77,106,0.4) !important; }
 
-/* ── Queue rows ───────────────────────────────────────────────────── */
 .dpr-queue-row {
   background: var(--dpr-surface-2);
   border: 1px solid var(--dpr-border);
@@ -264,7 +254,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dpr-queue-size { color: var(--dpr-text-dim) !important; font-size: 11.5px; }
 
-/* ── Notifications ────────────────────────────────────────────────── */
 .q-notification {
   background: var(--dpr-surface-2) !important;
   color: var(--dpr-text) !important;
@@ -273,7 +262,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   font-size: 12.5px !important;
 }
 
-/* ── Scrollbar ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
@@ -282,9 +270,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(34, 197, 94, 0.42); }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Shell — pure CSS grid
-   ═══════════════════════════════════════════════════════════════════ */
 .dpr-shell {
   display: grid;
   grid-template-columns: var(--dpr-sidebar-w) 1fr;
@@ -352,7 +337,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   border-color: rgba(255,176,32,0.4) !important;
 }
 
-/* ── Nav items ────────────────────────────────────────────────────── */
 .dpr-nav-item {
   display: block;
   padding: 8px 12px !important;
@@ -384,7 +368,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 .dpr-nav-icon { font-size: 18px !important; }
 .dpr-nav-label { font-size: 13px !important; font-weight: 500; }
 
-/* ── Page header / body ───────────────────────────────────────────── */
 .dpr-page-header { padding: 24px 28px 8px 28px; display: flex; flex-direction: column; gap: 4px; }
 .dpr-page-body { padding: 16px 28px 40px 28px; display: flex; flex-direction: column; gap: 16px; max-width: 1400px; }
 .dpr-page-title {
@@ -414,9 +397,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   .dpr-page-body { padding: 12px 16px 32px 16px; }
 }
 
-/* ═══════════════════════════════════════════════════════════════════
-   Analytics widgets
-   ═══════════════════════════════════════════════════════════════════ */
 .dpr-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -648,11 +628,7 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   font-size: 11.5px; line-height: 1.55;
   margin: 4px 0 14px 0; max-width: 640px;
 }
-</style>
-"""
-/* ═══════════════════════════════════════════════════════════════════
-   Zone Progress Board
-   ═══════════════════════════════════════════════════════════════════ */
+
 .dpr-zone-legend {
   display: flex; flex-wrap: wrap; gap: 10px 18px;
   padding: 12px 16px;
@@ -670,7 +646,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   width: 10px; height: 10px; border-radius: 3px;
   display: inline-block; flex: 0 0 auto;
 }
-
 .dpr-zone-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -692,7 +667,6 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   font-size: 20px; font-weight: 700; line-height: 1;
   letter-spacing: -0.02em;
 }
-
 .dpr-zone-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -740,6 +714,8 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   border-radius: var(--dpr-radius);
 }
 .dpr-zone-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+</style>
+"""
 
 
 def apply_theme() -> None:
