@@ -9,6 +9,7 @@ from core.db import save_report, cleanup_old_reports
 from core.errors import DPRMatrixError
 from core.extractors.router import route
 from ui import state
+from ui.shell import page_shell
 from ui.components import section_title, log_console
 from utils.files import validate_upload
 
@@ -24,14 +25,17 @@ _AGGREGATE_TIMEOUT_SEC = 600.0
 
 
 def render() -> None:
-    ui.label("DPR-Matrix").classes("dpr-app-title")
-    ui.label(
-        "Upload site reports (PDF · XLSX · XLS · PNG · JPG · TXT). "
-        "Each file is extracted independently, then merged deterministically "
-        "into a single Daily Progress Report."
-    ).classes("dpr-app-subtitle")
-    ui.separator()
+    with page_shell(
+        active="home",
+        title="Upload & Aggregate",
+        subtitle="Upload site reports (PDF · XLSX · XLS · PNG · JPG · TXT). "
+                 "Each file is extracted independently, then merged "
+                 "deterministically into a single Daily Progress Report.",
+    ):
+        _body()
 
+
+def _body() -> None:
     session_label = ui.label("").classes("dpr-muted")
 
     def refresh_session_label() -> None:
@@ -70,7 +74,6 @@ def render() -> None:
     async def handle_upload(e) -> None:
         filename = e.name
         try:
-            # MAX_FILES enforcement — counts only this user's queue.
             if len(state.queue_files()) >= settings.MAX_FILES:
                 raise DPRMatrixError(
                     f"Queue is at the {settings.MAX_FILES}-file limit. "
@@ -100,8 +103,9 @@ def render() -> None:
             max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
         ).props("accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt").classes("w-full")
         ui.label(
-            f"Files are validated on drop and queued — nothing runs until you click Aggregate. "
-            f"Up to {settings.MAX_FILES} files, {settings.MAX_UPLOAD_MB} MB each."
+            f"Files are validated on drop and queued — nothing runs until you "
+            f"click Aggregate. Up to {settings.MAX_FILES} files, "
+            f"{settings.MAX_UPLOAD_MB} MB each."
         ).classes("dpr-muted").style("margin-top: 10px;")
 
     with ui.card().classes("dpr-card w-full"):
@@ -149,7 +153,8 @@ def render() -> None:
                     state.log(f"[text] ok · {f['name']} → {len(doc.raw_text)} chars")
                 except Exception as ex:
                     state.set_status(f["token"], "error", str(ex))
-                    state.log(f"[text] fail · {f['name']}: {type(ex).__name__}: {ex}")
+                    state.log(f"[text] fail · {f['name']}: "
+                              f"{type(ex).__name__}: {ex}")
                 file_queue_panel.refresh()
 
             if state.is_cancelled():
@@ -249,12 +254,12 @@ def render() -> None:
         ui.notify("Session cleared", color="green")
         ui.navigate.to("/")
 
-    with ui.row().classes("gap-2 mt-4"):
+    with ui.row().classes("gap-2 mt-2"):
         ui.button("History", on_click=lambda: ui.navigate.to("/history"))
         ui.button("Clear Queue", on_click=_clear_queue)
         ui.button("New Session", on_click=_new_session)
 
-    section_title("Activity Log")
+    section_title("Activity Log", "Streaming status from the current run.")
     log_console()
 
     def _drain_events() -> None:
