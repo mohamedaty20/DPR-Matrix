@@ -4,11 +4,22 @@ Pass 1 — Gemini extracts EACH file independently into a strict schema.
 Pass 2 — Python merges deterministically: normalize → group → sum.
 
 The LLM never does the merge. All cross-file logic is auditable Python.
+
+Pass 6 adds:
+  * on_event(kind, **payload) — emitted from the worker thread; the UI
+    drains these via state.drain_events() and renders them.
+  * should_cancel() — cooperative cancellation checked between files
+    and before Pass 2.
+  * max_seconds — wall-clock watchdog. Whichever of cancel / watchdog
+    trips first wins; both return None so the caller can distinguish
+    "aborted" from "empty".
 """
 from __future__ import annotations
 
 import json
 import re
+import time
+from typing import Callable
 
 from core.models import ExtractedDocument, AggregatedReport
 from core.gemini_client import generate_text
@@ -20,7 +31,7 @@ from core.normalize import (
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# THE PROMPT
+# THE PROMPT — DO NOT CHANGE
 # ═══════════════════════════════════════════════════════════════════════════
 _SYSTEM = r"""You extract a Daily Progress Report (DPR) from ONE source document.
 It may be a scan, a photo, an Excel export, or raw text.
@@ -234,7 +245,6 @@ def _merge_work(rows: list[dict]) -> list[dict]:
             }
         else:
             g = groups[key]
-            # Sum numeric fields only when both sides have values
             if qty is not None:
                 g["quantity"] = (g["quantity"] or 0) + qty
             if sk is not None:
@@ -253,7 +263,6 @@ def _merge_work(rows: list[dict]) -> list[dict]:
     for g in groups.values():
         sk = g["skilled"]
         hp = g["helpers"]
-        # Crew Total = skilled + helpers, only when either is non-zero
         if sk is not None or hp is not None:
             g["crew_total"] = fmt_num((sk or 0) + (hp or 0))
         else:
@@ -264,7 +273,6 @@ def _merge_work(rows: list[dict]) -> list[dict]:
         g["helpers"]  = fmt_num(hp) if hp is not None else ""
         g["notes"]    = " | ".join(g["notes"])
 
-        # Reorder keys for display
         out.append({
             "building":     g["building"],
             "floor":        g["floor"],
@@ -423,23 +431,79 @@ def _clean_strings(items: list) -> list[str]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Public API
+# Public API — Pass 6 signature (backward compatible: all kwargs optional)
 # ═══════════════════════════════════════════════════════════════════════════
-def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
+def aggregate(
+    docs: list[ExtractedDocument],
+    *,
+    on_event: Callable[..., None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+    max_seconds: float | None = 600.0,
+) -> AggregatedReport | None:
+    """
+    Two-pass aggregation.
+
+    Returns the AggregatedReport on success, or None if the run was
+    cancelled (by should_cancel) or tripped the wall-clock watchdog.
+
+    Emitted events (via on_event):
+      "file_start"  — filename, index, total
+      "file_ok"     — filename, index, total
+      "file_err"    — filename, index, total, error
+      "merge_start" — num_files
+      "done"        — report
+      "cancelled"   — reason: "cancel" | "timeout", phase: "extract" | "merge"
+    """
+    def emit(kind: str, **payload) -> None:
+        if on_event is None:
+            return
+        try:
+            on_event(kind, **payload)
+        except Exception as e:
+            print(f"[agg] on_event({kind}) raised: {e}", flush=True)
+
+    started = time.monotonic()
+
+    def stop_reason() -> str:
+        if should_cancel is not None and should_cancel():
+            return "cancel"
+        if max_seconds is not None and (time.monotonic() - started) > max_seconds:
+            return "timeout"
+        return ""
+
     print(f"[agg] starting aggregate with {len(docs)} doc(s)", flush=True)
     if not docs:
         raise GeminiError("No documents to aggregate.")
 
-    # Pass 1
+    total = len(docs)
     per_file: list[dict] = []
-    for d in docs:
+
+    # ---- Pass 1: per-file LLM extraction -------------------------------
+    for i, d in enumerate(docs, start=1):
+        reason = stop_reason()
+        if reason:
+            print(f"[agg] {reason} before file {i}/{total}", flush=True)
+            emit("cancelled", reason=reason, phase="extract", index=i, total=total)
+            return None
+
+        emit("file_start", filename=d.filename, index=i, total=total)
         try:
             per_file.append(_extract_one(d))
+            emit("file_ok", filename=d.filename, index=i, total=total)
         except Exception as e:
             print(f"[agg] FAILED {d.filename}: {type(e).__name__}: {e}", flush=True)
             per_file.append({"_error": f"{d.filename}: {type(e).__name__}: {e}"})
+            emit("file_err", filename=d.filename, index=i, total=total,
+                 error=f"{type(e).__name__}: {e}")
 
-    # Collect rows
+    reason = stop_reason()
+    if reason:
+        emit("cancelled", reason=reason, phase="merge")
+        return None
+
+    # ---- Pass 2: deterministic merge -----------------------------------
+    emit("merge_start", num_files=total)
+
     work_rows, equip_rows, mat_rows, pers_rows = [], [], [], []
     hse, qc, risks, plan = [], [], [], []
     incidents_parts = []
@@ -463,7 +527,6 @@ def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
             if not header.get(k) and data.get(k):
                 header[k] = data[k]
 
-    # Pass 2
     print(f"[agg] pass 1 done; merging {len(work_rows)} work rows …", flush=True)
     report = AggregatedReport(
         project_name  = header.get("project_name", ""),
@@ -495,4 +558,6 @@ def aggregate(docs: list[ExtractedDocument]) -> AggregatedReport:
     if failed:
         report.notes.append(f"{len(failed)} file(s) failed extraction.")
     print(f"[agg] done. {len(report.work_progress)} work rows.", flush=True)
+
+    emit("done", report=report)
     return report
