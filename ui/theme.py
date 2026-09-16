@@ -30,9 +30,31 @@ html, body, #app, .nicegui-content, .q-page-container, .q-page {
   background: var(--dpr-bg) !important;
   color: var(--dpr-text) !important;
 }
-html, body, * {
+html, body {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
   -webkit-font-smoothing: antialiased;
+}
+body, .q-page, .q-card, .q-btn, .q-field, .q-item, .q-label,
+.dpr-shell, .dpr-shell-sidebar, .dpr-shell-main,
+.dpr-nav-item, .dpr-nav-label, .dpr-brand-mark, .dpr-brand-name,
+.dpr-page-title, .dpr-page-subtitle, .dpr-panel, .dpr-stat,
+.dpr-pill, .dpr-meta-strip, .dpr-meta-item, .dpr-console,
+.dpr-bar-label, .dpr-bar-value, .dpr-chart-title, .dpr-chart-total,
+.dpr-hist-label, .dpr-hist-value, .dpr-toplist-name, .dpr-toplist-value,
+.dpr-ratio-label, .dpr-ratio-total, .dpr-ratio-legend,
+.dpr-download-bar, .dpr-download-bar-label,
+.dpr-matrix-head, .dpr-matrix-row-head, .dpr-matrix-cell,
+.dpr-badge, .dpr-queue-name, .dpr-queue-size,
+.dpr-section-subtitle, .dpr-topbar-crumb {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
+}
+/* Material Icons and Quasar icons MUST keep their own font — do NOT override. */
+.q-icon, .material-icons, .material-icons-outlined, .material-symbols-outlined,
+.q-btn .q-icon, .q-item .q-icon {
+  font-family: 'Material Icons', 'Material Icons Outlined',
+               'Material Symbols Outlined', sans-serif !important;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
 }
 
 /* ── Top bar ──────────────────────────────────────────────────────── */
