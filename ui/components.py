@@ -35,9 +35,9 @@ def _render_table(rows: list[dict]) -> None:
             if k not in keys:
                 keys.append(k)
     head = "".join(
-        f'<th style="color:#00FF66;font-weight:700;padding:8px 10px;'
-        f'text-align:left;background:#001a0a;'
-        f'border-bottom:2px solid #00FF66;white-space:nowrap;">'
+        f'<th style="color:#22c55e;font-weight:700;padding:8px 10px;'
+        f'text-align:left;background:#0a1f12;'
+        f'border-bottom:2px solid #22c55e;white-space:nowrap;">'
         f'{escape(k.replace("_", " ").title())}</th>' for k in keys
     )
     body = ""
@@ -49,7 +49,7 @@ def _render_table(rows: list[dict]) -> None:
                 v = ", ".join(str(x) for x in v)
             cells += (
                 f'<td style="color:#ffffff;padding:6px 10px;'
-                f'border-bottom:1px solid #1f3f1f;vertical-align:top;">'
+                f'border-bottom:1px solid #1a2e22;vertical-align:top;">'
                 f'{escape(str(v))}</td>'
             )
         body += f'<tr style="background:#0a0a0a;">{cells}</tr>'
