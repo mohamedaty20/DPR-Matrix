@@ -55,9 +55,35 @@ apply_theme()
 _log("theme applied")
 
 
-@app.get("/healthz")
-def healthz():
-    return Response(content="ok", media_type="text/plain")
+@app.get("/test-gemini")
+def test_gemini():
+    """Diagnostic — calls Gemini REST directly with hard timeout."""
+    import httpx, time
+    from config import settings
+
+    model = settings.GEMINI_MODEL
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    body = {"contents": [{"role": "user", "parts": [{"text": "Reply with the single word: OK"}]}]}
+    headers = {"Content-Type": "application/json", "x-goog-api-key": settings.GEMINI_API_KEY}
+
+    t0 = time.time()
+    try:
+        r = httpx.post(url, json=body, headers=headers, timeout=30.0)
+        elapsed = time.time() - t0
+        return Response(
+            content=(
+                f"model: {model}\n"
+                f"elapsed: {elapsed:.2f}s\n"
+                f"status: {r.status_code}\n\n"
+                f"body:\n{r.text[:1500]}"
+            ),
+            media_type="text/plain",
+        )
+    except Exception as e:
+        return Response(
+            content=f"FAILED after {time.time()-t0:.2f}s\n{type(e).__name__}: {e}",
+            media_type="text/plain",
+        )
 @app.get("/test-gemini")
 def test_gemini():
     """Bare-metal Gemini test with hard 30s timeout."""
