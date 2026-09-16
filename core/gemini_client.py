@@ -1,132 +1,121 @@
-"""Gemini client — hard timeouts, fast fallback, visible model attempts."""
+"""Gemini client — direct REST via httpx. No SDK, no gRPC, hard timeouts.
+
+The google-generativeai SDK uses gRPC under the hood and its timeout
+options are frequently ignored, causing multi-hour hangs. This module
+calls the REST endpoint directly with httpx, where timeouts actually work.
+"""
 from __future__ import annotations
+
+import base64
+import json
 import logging
 import time
 
-import google.generativeai as genai
+import httpx
 
 from config import settings
 from core.errors import GeminiError
 
 log = logging.getLogger("dpr.gemini")
 
-genai.configure(api_key=settings.GEMINI_API_KEY)
+_API_BASE = "https://generativelanguage.googleapis.com/v1beta"
 
-# Try the configured model first, then the fallbacks.
-_MODELS = [settings.GEMINI_MODEL, *settings.GEMINI_FALLBACK_MODELS]
-
-# Hard cap per request — no more 1-hour hangs.
-_TIMEOUT_SECONDS = 60
-_MAX_ATTEMPTS_PER_MODEL = 1
+# Hard timeout: connect=10s, read=90s, write=10s
+_TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=10.0, pool=10.0)
 
 
-def _list_available_models() -> list[str]:
-    """Ask Google which models this API key can actually use. Never raises."""
+class _ModelNotFound(Exception):
+    """Raised when a specific model ID returns 404 — try next, don't retry this one."""
+
+
+def _models_chain() -> list[str]:
+    return [settings.GEMINI_MODEL, *settings.GEMINI_FALLBACK_MODELS]
+
+
+def _call(model: str, parts: list[dict], json_mode: bool) -> str:
+    url = f"{_API_BASE}/models/{model}:generateContent"
+    body: dict = {"contents": [{"role": "user", "parts": parts}]}
+    if json_mode:
+        body["generationConfig"] = {"response_mime_type": "application/json"}
+
+    headers = {
+        "Content-Type": "application/json",
+        "x-goog-api-key": settings.GEMINI_API_KEY,
+    }
+
+    print(f"[gemini] POST {model} (json={json_mode}) …", flush=True)
+    t0 = time.time()
     try:
-        names = []
-        for m in genai.list_models():
-            if "generateContent" in getattr(m, "supported_generation_methods", []):
-                names.append(m.name.replace("models/", ""))
-        return names
-    except Exception as e:
-        log.warning("Could not list models: %s", e)
-        return []
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            r = client.post(url, json=body, headers=headers)
+    except httpx.TimeoutException as e:
+        print(f"[gemini] TIMEOUT on {model}: {e}", flush=True)
+        raise GeminiError(f"Timeout calling {model}: {e}") from e
+    except httpx.RequestError as e:
+        print(f"[gemini] NETWORK ERROR on {model}: {e}", flush=True)
+        raise GeminiError(f"Network error calling {model}: {e}") from e
 
+    print(f"[gemini] ← {model} status={r.status_code} in {time.time()-t0:.1f}s", flush=True)
 
-def _candidate_models() -> list[str]:
-    """Return models to try in order — validated against the live list if possible."""
-    available = _list_available_models()
+    if r.status_code == 404:
+        raise _ModelNotFound(f"Model '{model}' returned 404")
 
-    # If we can't list models (offline, network issue), just use the chain as-is.
-    if not available:
-        log.info("Model list unavailable; using configured chain: %s", _MODELS)
-        return _MODELS
-
-    log.info("Models available to this key: %s", available)
-
-    chain = []
-    for wanted in _MODELS:
-        if wanted in available:
-            chain.append(wanted)
-            log.info("Using configured model: %s", wanted)
-        else:
-            log.warning("Configured model '%s' not available to this key", wanted)
-
-    # If none of the configured models work, pick the best available fallback.
-    if not chain:
-        for preferred in (
-            "gemini-2.0-flash",
-            "gemini-2.0-flash-lite",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-pro",
-        ):
-            if preferred in available:
-                chain.append(preferred)
-                log.warning("Falling back to available model: %s", preferred)
-                break
-
-    if not chain:
-        raise GeminiError(
-            f"No usable Gemini model. Available: {available[:10]}. "
-            f"Configured: {_MODELS}"
-        )
-    return chain
-
-
-def _call_with_timeout(model_name: str, build_request):
-    """Invoke generate_content with a hard timeout via request_options."""
-    model = genai.GenerativeModel(model_name)
-    for attempt in range(1, _MAX_ATTEMPTS_PER_MODEL + 1):
+    if r.status_code >= 400:
         try:
-            log.info("→ %s (attempt %d)", model_name, attempt)
-            t0 = time.time()
-            resp = build_request(model)
-            log.info("← %s returned in %.1fs", model_name, time.time() - t0)
-            return resp.text
-        except Exception as e:
-            msg = str(e)
-            # 404/400 on model ID → don't retry this model.
-            if "404" in msg or "not found" in msg.lower() or "not supported" in msg.lower():
-                log.warning("Model %s rejected: %s", model_name, msg[:200])
-                raise
-            if attempt >= _MAX_ATTEMPTS_PER_MODEL:
-                log.warning("Model %s failed: %s", model_name, msg[:200])
-                raise
-            log.warning("Retrying %s after error: %s", model_name, msg[:200])
-            time.sleep(2)
-    raise GeminiError(f"Model {model_name} exhausted attempts")
+            err = r.json().get("error", {})
+            msg = err.get("message", r.text[:300])
+        except Exception:
+            msg = r.text[:300]
+        print(f"[gemini] ERROR {r.status_code} on {model}: {msg[:200]}", flush=True)
+        raise GeminiError(f"HTTP {r.status_code} on {model}: {msg}")
+
+    try:
+        data = r.json()
+        candidates = data.get("candidates") or []
+        if not candidates:
+            raise GeminiError(f"No candidates: {json.dumps(data)[:300]}")
+        out_parts = candidates[0].get("content", {}).get("parts", [])
+        text = "".join(p.get("text", "") for p in out_parts)
+        if not text:
+            raise GeminiError(f"Empty text: {json.dumps(data)[:300]}")
+        return text
+    except (KeyError, IndexError) as e:
+        raise GeminiError(f"Malformed response: {json.dumps(data)[:300]}") from e
 
 
 def generate_text(prompt: str, json_mode: bool = False) -> str:
+    parts = [{"text": prompt}]
     last_err: Exception | None = None
-    for name in _candidate_models():
+    for m in _models_chain():
         try:
-            def _build(model):
-                cfg = {"response_mime_type": "application/json"} if json_mode else {}
-                return model.generate_content(
-                    prompt,
-                    generation_config=cfg,
-                    request_options={"timeout": _TIMEOUT_SECONDS},
-                )
-            return _call_with_timeout(name, _build)
-        except Exception as e:
+            return _call(m, parts, json_mode)
+        except _ModelNotFound as e:
+            print(f"[gemini] skip {m}: {e}", flush=True)
             last_err = e
             continue
-    raise GeminiError(f"All Gemini models failed. Last error: {last_err}")
+        except Exception as e:
+            print(f"[gemini] fail {m}: {type(e).__name__}: {e}", flush=True)
+            last_err = e
+            continue
+    raise GeminiError(f"All models failed. Last: {last_err}")
 
 
 def describe_image(image_bytes: bytes, mime: str, prompt: str) -> str:
+    b64 = base64.b64encode(image_bytes).decode("ascii")
+    parts = [
+        {"text": prompt},
+        {"inline_data": {"mime_type": mime, "data": b64}},
+    ]
     last_err: Exception | None = None
-    for name in _candidate_models():
+    for m in _models_chain():
         try:
-            def _build(model):
-                return model.generate_content(
-                    [prompt, {"mime_type": mime, "data": image_bytes}],
-                    request_options={"timeout": _TIMEOUT_SECONDS},
-                )
-            return _call_with_timeout(name, _build)
-        except Exception as e:
+            return _call(m, parts, json_mode=False)
+        except _ModelNotFound as e:
+            print(f"[gemini] skip {m}: {e}", flush=True)
             last_err = e
             continue
-    raise GeminiError(f"All Gemini models failed for image. Last: {last_err}")
+        except Exception as e:
+            print(f"[gemini] fail {m}: {type(e).__name__}: {e}", flush=True)
+            last_err = e
+            continue
+    raise GeminiError(f"All models failed for image. Last: {last_err}")
