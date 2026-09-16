@@ -7,15 +7,15 @@ from utils.logging_config import setup_logging
 from ui.theme import apply_theme
 from core.db import init_db
 
-# Direct imports of the render functions — no package-level indirection
 from ui.pages.home import render as render_home
 from ui.pages.results import render as render_results
+from ui.pages.history import render as render_history
 
 
 setup_logging(settings.LOG_LEVEL)
 app.add_static_files("/assets", "assets")
 
-apply_theme()  # register shared CSS before any page is created
+apply_theme()
 
 
 @app.get("/healthz")
@@ -31,6 +31,11 @@ def index():
 @ui.page("/results")
 def results_page():
     render_results()
+
+
+@ui.page("/history")
+def history_page():
+    render_history()
 
 
 if __name__ in {"__main__", "__mp_main__"}:
