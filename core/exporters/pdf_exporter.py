@@ -211,7 +211,7 @@ def export_pdf(report: AggregatedReport) -> bytes:
             return
         story.append(KeepTogether([Paragraph(_e(title), S["h2"]), tbl]))
 
-    bullet_section("Personnel on Site", report.personnel_on_site)
+    table_section("Personnel", report.personnel)
     table_section("Work Progress", report.work_progress)
     table_section("Equipment", report.equipment)
     table_section("Materials", report.materials)
