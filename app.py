@@ -5,15 +5,9 @@ from fastapi import Response
 from config import settings
 from utils.logging_config import setup_logging
 from ui.theme import apply_theme
-from core.db import init_db
-from ui.pages import home, results
+# ...
 
-setup_logging(settings.LOG_LEVEL)
-app.add_static_files("/assets", "assets")
-
-@app.get("/healthz")
-def healthz():
-    return Response(content="ok", media_type="text/plain")
+apply_theme()   # <-- MUST be before page decorators
 
 @ui.page("/")
 def index():
