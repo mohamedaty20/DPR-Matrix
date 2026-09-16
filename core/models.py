@@ -41,6 +41,10 @@ class AggregatedReport:
     conflicts:    list[dict] = dc_field(default_factory=list)
     notes:        list[str] = dc_field(default_factory=list)
 
+    # ---- Pass 10: source reconciliation ----
+    # One entry per merged work-progress key, with raw values from each source.
+    reconciliation: list[dict] = dc_field(default_factory=list)
+
     def to_dict(self) -> dict:
         return asdict(self)
 
