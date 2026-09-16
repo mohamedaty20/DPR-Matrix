@@ -78,18 +78,39 @@ def render():
 
 
 def _download_pdf():
-    from core.exporters.pdf_exporter import export_pdf
-    ui.download(export_pdf(state.report()), f"{_stem()}.pdf")
+    try:
+        from core.exporters.pdf_exporter import export_pdf
+        data = export_pdf(state.report())
+        ui.download(data, f"{_stem()}.pdf")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        state.log(f"[err] PDF export: {type(e).__name__}: {e}")
+        ui.notify(f"PDF export failed: {e}", color="red")
 
 
 def _download_excel():
-    from core.exporters.excel_exporter import export_excel
-    ui.download(export_excel(state.report()), f"{_stem()}.xlsx")
+    try:
+        from core.exporters.excel_exporter import export_excel
+        data = export_excel(state.report())
+        ui.download(data, f"{_stem()}.xlsx")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        state.log(f"[err] Excel export: {type(e).__name__}: {e}")
+        ui.notify(f"Excel export failed: {e}", color="red")
 
 
 def _download_txt():
-    from core.exporters.txt_exporter import export_txt
-    ui.download(export_txt(state.report()).encode("utf-8"), f"{_stem()}.txt")
+    try:
+        from core.exporters.txt_exporter import export_txt
+        data = export_txt(state.report()).encode("utf-8")
+        ui.download(data, f"{_stem()}.txt")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        state.log(f"[err] TXT export: {type(e).__name__}: {e}")
+        ui.notify(f"TXT export failed: {e}", color="red")
 
 
 def _new_session():
