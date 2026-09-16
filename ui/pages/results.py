@@ -4,10 +4,10 @@ Layout:
   1. Header + metadata strip
   2. Download bar (prominent, top)
   3. KPI cards
-  4. Charts (crew by building · work by activity)
+  4. Charts — Manpower by Building · Activity Breakdown
   5. Conflict / notes banners
-  6. Full report preview
-  7. Footer: download bar (again) + navigation
+  6. Detailed report
+  7. Download bar (again) + navigation
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from core.normalize import to_float
 from ui import state
 from ui.components import (
     bar_chart,
+    empty_chart,
     kpi_row,
     metadata_strip,
     report_preview,
@@ -45,15 +46,17 @@ def _stem() -> str:
 
 
 # ── Derived metrics ──────────────────────────────────────────────────────
-def _total_crew(report) -> int:
-    total = 0
+def _manpower_split(report) -> tuple[int, int, int]:
+    """Returns (skilled, helpers, total)."""
+    sk = hp = 0
     for r in report.work_progress:
-        total += int(to_float(r.get("skilled")) or 0)
-        total += int(to_float(r.get("helpers")) or 0)
-    return total
+        sk += int(to_float(r.get("skilled")) or 0)
+        hp += int(to_float(r.get("helpers")) or 0)
+    return sk, hp, sk + hp
 
 
-def _crew_by_building(report) -> list[tuple[str, int]]:
+def _manpower_by_building(report) -> list[tuple[str, int]]:
+    """Total headcount per building, descending by headcount."""
     acc: dict[str, int] = defaultdict(int)
     for r in report.work_progress:
         b = (r.get("building") or "—").strip() or "—"
@@ -63,13 +66,14 @@ def _crew_by_building(report) -> list[tuple[str, int]]:
 
     def sort_key(kv):
         try:
-            return (0, int(kv[0]))
+            return (-kv[1], 0, int(kv[0]))
         except (ValueError, TypeError):
-            return (1, kv[0])
+            return (-kv[1], 1, kv[0])
     return sorted(acc.items(), key=sort_key)
 
 
-def _work_by_activity(report) -> list[tuple[str, int]]:
+def _activity_breakdown(report) -> list[tuple[str, int]]:
+    """Count of distinct building/floor locations per activity, descending."""
     c: Counter = Counter()
     for r in report.work_progress:
         a = (r.get("activity") or "").strip()
@@ -120,7 +124,7 @@ def _download_row(*, prominent: bool = False) -> None:
     with ui.element("div").classes("dpr-download-bar"):
         with ui.element("div").classes("dpr-download-bar-label"):
             ui.html(
-                "Export this report"
+                "Download this report"
                 f"<small>{_stem()}.pdf · .xlsx · .txt</small>"
             )
         with ui.row().classes("gap-2 items-center"):
@@ -149,7 +153,8 @@ def _empty_state() -> None:
             ).classes("text-white")
 
     if state.logs():
-        section_title("Last activity")
+        section_title("Last activity",
+                      "The most recent log lines from this session.")
         with ui.card().classes("dpr-card w-full"):
             ui.html("<br>".join(state.logs()[-15:])) \
                 .classes("dpr-console w-full")
@@ -194,55 +199,82 @@ def render():
     _download_row(prominent=True)
 
     # ── 3. KPI cards ──────────────────────────────────────────────────
-    total_crew = _total_crew(rpt)
+    skilled, helpers, total_manpower = _manpower_split(rpt)
     buildings = {r.get("building") for r in rpt.work_progress if r.get("building")}
     activities = {r.get("activity") for r in rpt.work_progress if r.get("activity")}
+    n_conflicts = len(rpt.conflicts)
 
     kpi_row([
         {
-            "label": "Files Merged",
+            "label": "Source Files",
             "value": len(rpt.source_files),
-            "sub":   ", ".join(rpt.source_files[:2]) +
-                     (" …" if len(rpt.source_files) > 2 else ""),
+            "sub":   "merged into this report",
             "tone":  "primary",
         },
         {
-            "label": "Work Rows",
+            "label": "Active Tasks",
             "value": len(rpt.work_progress),
             "sub":   f"{len(buildings)} building(s) · {len(activities)} activity",
         },
         {
-            "label": "Total Crew",
-            "value": total_crew,
-            "sub":   "skilled + helpers across all rows",
+            "label": "Total Manpower",
+            "value": total_manpower,
+            "sub":   f"{skilled} skilled · {helpers} helpers",
         },
         {
-            "label": "Conflicts",
-            "value": len(rpt.conflicts),
-            "sub":   "source disagreements" if rpt.conflicts else "no disagreements",
-            "tone":  "danger" if rpt.conflicts else "primary",
+            "label": "Data Conflicts",
+            "value": n_conflicts,
+            "sub":   ("sources disagree — see banner"
+                      if n_conflicts else "no disagreements"),
+            "tone":  "danger" if n_conflicts else "primary",
         },
     ])
 
     # ── 4. Charts ─────────────────────────────────────────────────────
-    crew_items = _crew_by_building(rpt)[:8]
-    activity_items = _work_by_activity(rpt)
+    manpower_items = _manpower_by_building(rpt)[:10]
+    activity_items = _activity_breakdown(rpt)
 
-    if crew_items or activity_items:
-        with ui.element("div").classes("dpr-chart-grid"):
-            if crew_items:
-                bar_chart("Crew by building", crew_items)
-            if activity_items:
-                bar_chart("Work rows by activity", activity_items)
+    with ui.element("div").classes("dpr-chart-grid"):
+        if manpower_items:
+            bar_chart(
+                "Manpower by Building",
+                manpower_items,
+                subtitle="Total skilled + helper headcount per building — "
+                         "shows where your crew is concentrated today.",
+                total_label="workers",
+            )
+        else:
+            empty_chart(
+                "Manpower by Building",
+                "No manpower recorded in this report.",
+            )
+
+        if activity_items:
+            bar_chart(
+                "Activity Breakdown",
+                activity_items,
+                subtitle="Number of building & floor locations per activity — "
+                         "shows how widespread each trade is today.",
+                total_label="locations",
+            )
+        else:
+            empty_chart(
+                "Activity Breakdown",
+                "No activities recorded in this report.",
+            )
 
     # ── 5. Conflicts + notes ──────────────────────────────────────────
     from ui.conflicts import conflict_banner, notes_banner
     conflict_banner(rpt.conflicts)
     notes_banner(rpt.notes)
 
-    # ── 6. Full preview ───────────────────────────────────────────────
+    # ── 6. Detailed report ────────────────────────────────────────────
     with ui.card().classes("dpr-card w-full"):
-        section_title("Full Report")
+        section_title(
+            "Detailed Report",
+            "Complete breakdown by section — work progress, equipment, "
+            "materials, personnel, safety and quality.",
+        )
         report_preview()
 
     # ── 7. Bottom download bar ────────────────────────────────────────
