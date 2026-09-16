@@ -26,14 +26,18 @@ def render():
     refresh_status()
 
     async def handle_upload(e):
+        filename = e.name
         try:
             data = e.content.read()
-            filename = e.name
             validate_upload(filename, data)
             ui.notify(f"Processing {filename}…", color="green")
+            state.log(f"[..] extracting {filename} ({len(data)} bytes)")
+
             doc = await run.io_bound(route, data, filename)
+
             state.add_doc(doc)
             state.log(f"[ok] {filename} → {len(doc.raw_text)} chars extracted")
+            state.log(f"[state] docs in session: {len(state.docs())}")
             progress.value = min(1.0, len(state.docs()) / 5)
             refresh_status()
             ui.notify(f"Extracted {filename}", color="green")
@@ -41,7 +45,7 @@ def render():
             state.log(f"[err] {filename}: {ex}")
             ui.notify(str(ex), color="red")
         except Exception as ex:
-            state.log(f"[err] {filename}: {ex}")
+            state.log(f"[err] {filename}: {type(ex).__name__}: {ex}")
             ui.notify(f"Unexpected error: {ex}", color="red")
 
     with ui.card().classes("w-full"):
@@ -60,16 +64,17 @@ def render():
 
         async def run_aggregate():
             if not state.docs():
-                ui.notify("Upload at least one file first", color="orange"); return
+                ui.notify("Upload at least one file first", color="orange")
+                return
             try:
-                state.log("[run] aggregating…")
+                state.log(f"[run] aggregating {len(state.docs())} doc(s)…")
                 ui.notify("Aggregating with Gemini…", color="green")
                 report = await run.io_bound(aggregate, state.docs())
+                state.log(f"[ok] aggregation complete · project={report.project_name!r}")
                 state.set_report(report)
-                state.log("[ok] aggregation complete")
                 ui.navigate.to("/results")
             except Exception as ex:
-                state.log(f"[err] aggregation failed: {ex}")
+                state.log(f"[err] aggregation failed: {type(ex).__name__}: {ex}")
                 ui.notify(f"Aggregation failed: {ex}", color="red")
 
         ui.button("Aggregate Reports", on_click=run_aggregate)
