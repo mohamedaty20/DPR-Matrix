@@ -21,34 +21,34 @@ def _stem() -> str:
 
 
 def render():
-    ui.label("Aggregated Report").classes("text-4xl font-bold dpr-title")
+    ui.label("Aggregated Report").classes("dpr-app-title")
     ui.separator()
 
     rpt = state.report()
-    n_docs = len(state.docs())
+    n_queue = len(state.queue_files())
 
     ui.label(
-        f"Session check → docs loaded: {n_docs} · report in state: "
-        f"{'yes' if rpt else 'no'} · log lines: {len(state.logs())}"
-    ).classes("text-white").style("opacity:.7; font-size:12px")
+        f"Queue: {n_queue} file(s) · report: "
+        f"{'ready' if rpt else 'none'} · log lines: {len(state.logs())}"
+    ).classes("dpr-muted")
 
     if rpt is None:
-        with ui.card().classes("w-full"):
-            ui.label("⚠  No report in this session.").classes("dpr-title text-xl")
-            if n_docs == 0:
+        with ui.card().classes("dpr-card w-full"):
+            ui.label("No report in this session.").classes("dpr-title text-xl")
+            if n_queue == 0:
                 ui.label(
-                    "No files were uploaded. Go back, upload at least one "
-                    "PDF / XLSX / PNG / JPG / TXT, then click Aggregate Reports."
+                    "No files were uploaded. Go back, add at least one "
+                    "PDF / XLSX / PNG / JPG / TXT, then click Aggregate."
                 ).classes("text-white")
             else:
                 ui.label(
-                    f"{n_docs} file(s) are loaded but aggregation hasn't produced "
-                    "a report yet. Click Aggregate Reports on the Upload page and "
-                    "watch the Activity Log for errors."
+                    f"{n_queue} file(s) are queued but no report was produced. "
+                    "The job may have been cancelled or failed — check the "
+                    "Activity Log on the upload page."
                 ).classes("text-white")
         if state.logs():
             section_title("Last activity")
-            with ui.card().classes("w-full"):
+            with ui.card().classes("dpr-card w-full"):
                 ui.html("<br>".join(state.logs()[-15:])) \
                     .classes("dpr-console w-full")
         with ui.row().classes("gap-3 mt-4"):
@@ -56,14 +56,14 @@ def render():
             ui.button("History", on_click=lambda: ui.navigate.to("/history"))
         return
 
-    with ui.card().classes("w-full"):
+    with ui.card().classes("dpr-card w-full"):
         section_title("Preview")
         report_preview()
 
-    with ui.card().classes("w-full"):
+    with ui.card().classes("dpr-card w-full"):
         section_title("Export")
         ui.label(f"Filename will be: {_stem()}.pdf / .xlsx / .txt") \
-            .classes("text-white").style("opacity:.7; font-size:12px")
+            .classes("dpr-muted")
         with ui.row().classes("gap-3"):
             ui.button("Download PDF",   on_click=_download_pdf)
             ui.button("Download Excel", on_click=_download_excel)
@@ -72,7 +72,7 @@ def render():
     with ui.row().classes("gap-3 mt-4"):
         if state.report_id():
             ui.label(f"Saved as report #{state.report_id()}") \
-                .classes("text-white").style("opacity:.7; align-self:center;")
+                .classes("dpr-muted").style("align-self:center;")
         ui.button("History", on_click=lambda: ui.navigate.to("/history"))
         ui.button("New Session", on_click=_new_session)
 
@@ -115,4 +115,6 @@ def _download_txt():
 
 def _new_session():
     state.reset()
+    state.clear_queue()
+    state.clear_cancel()
     ui.navigate.to("/")
