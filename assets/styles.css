@@ -1,0 +1,14 @@
+/* DPR-Matrix — global styles. Loaded by ui/theme.py */
+html, body {
+  background: #000000;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+}
+
+h1, h2, h3, h4 { color: #00FF66; font-weight: 700; }
+
+a { color: #00FF66; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+table, td, th { color: #ffffff; border-color: #1f3f1f; }
+thead th { color: #00FF66; font-weight: 700; }
