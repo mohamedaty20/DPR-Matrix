@@ -78,7 +78,7 @@ p, span, div, label, li, td, th,
   padding: 18px 20px !important;
 }
 
-/* ── Buttons — small, ghost, no uppercase ─────────────────────────── */
+/* ── Buttons ──────────────────────────────────────────────────────── */
 .q-btn, button.q-btn {
   background: transparent !important;
   color: var(--dpr-text) !important;
@@ -105,7 +105,6 @@ p, span, div, label, li, td, th,
 }
 .q-btn__content, .q-btn .q-icon { color: inherit !important; font-size: 13px !important; }
 
-/* Primary — solid green */
 .dpr-btn-primary.q-btn {
   background: var(--dpr-primary) !important;
   color: #050506 !important;
@@ -118,7 +117,6 @@ p, span, div, label, li, td, th,
   border-color: var(--dpr-primary-dim) !important;
 }
 
-/* Danger — red ghost */
 .dpr-btn-danger.q-btn {
   border-color: rgba(255,77,106,0.35) !important;
   color: var(--dpr-danger) !important;
@@ -129,7 +127,6 @@ p, span, div, label, li, td, th,
   color: var(--dpr-danger) !important;
 }
 
-/* Icon-only (queue remove) */
 .dpr-icon-btn.q-btn {
   padding: 0 !important;
   min-height: 26px !important;
@@ -270,6 +267,178 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0, 255, 102, 0.4); }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Pass 7.5 — Dashboard
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Metadata strip ───────────────────────────────────────────────── */
+.dpr-meta-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 1px;
+  background: var(--dpr-border);
+  border: 1px solid var(--dpr-border);
+  border-radius: var(--dpr-radius-sm);
+  overflow: hidden;
+  margin: 12px 0;
+}
+.dpr-meta-item {
+  background: var(--dpr-surface);
+  padding: 12px 14px;
+}
+.dpr-meta-label {
+  color: var(--dpr-text-muted) !important;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.dpr-meta-value {
+  color: var(--dpr-text) !important;
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── KPI grid ─────────────────────────────────────────────────────── */
+.dpr-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+  width: 100%;
+}
+.dpr-kpi {
+  background: linear-gradient(180deg, var(--dpr-surface-2) 0%, #08080a 100%);
+  border: 1px solid var(--dpr-border);
+  border-radius: var(--dpr-radius);
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .14s ease, transform .14s ease;
+}
+.dpr-kpi:hover {
+  border-color: var(--dpr-border-hover);
+  transform: translateY(-1px);
+}
+.dpr-kpi-label {
+  color: var(--dpr-text-muted) !important;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+.dpr-kpi-value {
+  color: var(--dpr-text) !important;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.dpr-kpi-sub {
+  color: var(--dpr-text-dim) !important;
+  font-size: 11px;
+  margin-top: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dpr-kpi-primary .dpr-kpi-value { color: var(--dpr-primary) !important; }
+.dpr-kpi-warning .dpr-kpi-value { color: var(--dpr-warning) !important; }
+.dpr-kpi-danger  .dpr-kpi-value { color: var(--dpr-danger)  !important; }
+
+/* ── Charts grid ──────────────────────────────────────────────────── */
+.dpr-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 14px;
+  margin: 14px 0;
+  width: 100%;
+}
+.dpr-chart {
+  background: linear-gradient(180deg, var(--dpr-surface-2) 0%, #08080a 100%);
+  border: 1px solid var(--dpr-border);
+  border-radius: var(--dpr-radius);
+  padding: 16px 18px;
+}
+.dpr-chart-title {
+  color: var(--dpr-text-muted) !important;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.dpr-bar-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.dpr-bar-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.dpr-bar-label {
+  color: var(--dpr-text) !important;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dpr-bar-track {
+  background: rgba(255,255,255,0.03);
+  border-radius: 999px;
+  height: 8px;
+  overflow: hidden;
+}
+.dpr-bar-fill {
+  background: linear-gradient(90deg, var(--dpr-primary-dim), var(--dpr-primary));
+  height: 100%;
+  border-radius: 999px;
+  transition: width .3s ease;
+}
+.dpr-bar-value {
+  color: var(--dpr-text-muted) !important;
+  font-size: 11.5px;
+  text-align: right;
+  font-weight: 600;
+}
+
+/* ── Download bar ─────────────────────────────────────────────────── */
+.dpr-download-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  background: linear-gradient(90deg,
+      rgba(0,255,102,0.05) 0%,
+      rgba(0,255,102,0.02) 100%);
+  border: 1px solid var(--dpr-border-hover);
+  border-radius: var(--dpr-radius);
+  padding: 14px 18px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.dpr-download-bar-label {
+  color: var(--dpr-text) !important;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.dpr-download-bar-label small {
+  color: var(--dpr-text-muted) !important;
+  font-weight: 400;
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+}
 </style>
 """
 
