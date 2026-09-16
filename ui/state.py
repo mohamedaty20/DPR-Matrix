@@ -156,3 +156,35 @@ def reset() -> None:
         "docs": [], "report": None, "report_id": None, "logs": [],
     })
     clear_events()
+
+# ── S-curve targets ───────────────────────────────────────────────────────
+def s_curve_targets() -> dict[str, dict]:
+    """{activity: {"target": float, "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}}"""
+    b = _bucket()
+    b.setdefault("s_curve_targets", {})
+    return b["s_curve_targets"]
+
+
+def set_s_curve_target(activity: str, target: float, start: str, end: str) -> None:
+    s_curve_targets()[activity] = {
+        "target": float(target), "start": start, "end": end,
+    }
+
+
+def clear_s_curve_targets() -> None:
+    _bucket()["s_curve_targets"] = {}
+
+
+# ── Risk forecast cache ───────────────────────────────────────────────────
+def risk_cache() -> dict:
+    b = _bucket()
+    b.setdefault("risk_cache", {})
+    return b["risk_cache"]
+
+
+def set_risk_cache(key: str, value: dict) -> None:
+    risk_cache()[key] = value
+
+
+def clear_risk_cache() -> None:
+    _bucket()["risk_cache"] = {}
