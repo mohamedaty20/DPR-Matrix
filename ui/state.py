@@ -22,11 +22,13 @@ def _bucket() -> dict:
     if _KEY not in store:
         store[_KEY] = {
             "docs": [], "report": None, "report_id": None,
-            "logs": [], "queue": [], "zones": [],
-            "s_curve_targets": {}, "risk_cache": {},
+            "logs": [], "queue": [],
+            "zones": {},
+            "s_curve_targets": {},
+            "risk_cache": {},
         }
     store[_KEY].setdefault("queue", [])
-    store[_KEY].setdefault("zones", [])
+    store[_KEY].setdefault("zones", {})
     store[_KEY].setdefault("s_curve_targets", {})
     store[_KEY].setdefault("risk_cache", {})
     return store[_KEY]
@@ -152,27 +154,14 @@ def reset_zones() -> None:
     _bucket()["zones"] = {}
 
 
-# ── Reset ─────────────────────────────────────────────────────────────────
-def reset() -> None:
-    """Clear docs / report / logs / events. Keeps queue and zones."""
-    _bucket().update({
-        "docs": [], "report": None, "report_id": None, "logs": [],
-    })
-    clear_events()
-
 # ── S-curve targets ───────────────────────────────────────────────────────
 def s_curve_targets() -> dict[str, dict]:
-    """{activity: {"target": float, "start": "YYYY-MM-DD", "end": "YYYY-MM-DD"}}"""
-    b = _bucket()
-    b.setdefault("s_curve_targets", {})
-    return b["s_curve_targets"]
-
+    return _bucket()["s_curve_targets"]
 
 def set_s_curve_target(activity: str, target: float, start: str, end: str) -> None:
     s_curve_targets()[activity] = {
         "target": float(target), "start": start, "end": end,
     }
-
 
 def clear_s_curve_targets() -> None:
     _bucket()["s_curve_targets"] = {}
@@ -180,14 +169,19 @@ def clear_s_curve_targets() -> None:
 
 # ── Risk forecast cache ───────────────────────────────────────────────────
 def risk_cache() -> dict:
-    b = _bucket()
-    b.setdefault("risk_cache", {})
-    return b["risk_cache"]
-
+    return _bucket()["risk_cache"]
 
 def set_risk_cache(key: str, value: dict) -> None:
     risk_cache()[key] = value
 
-
 def clear_risk_cache() -> None:
     _bucket()["risk_cache"] = {}
+
+
+# ── Reset ─────────────────────────────────────────────────────────────────
+def reset() -> None:
+    """Clear docs / report / logs / events. Keeps queue, zones, targets."""
+    _bucket().update({
+        "docs": [], "report": None, "report_id": None, "logs": [],
+    })
+    clear_events()
