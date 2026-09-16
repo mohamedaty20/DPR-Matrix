@@ -21,7 +21,7 @@ def notes_banner(notes: list[str]) -> None:
     if not notes:
         return
     with ui.card().classes("w-full").style(
-        "background:#001a0a !important; border-color:#00FF66 !important;"
+        "background:#0a1f12 !important; border-color:#22c55e !important;"
     ):
         for n in notes:
             ui.label(f"ℹ {n}").classes("text-white").style("font-size:12px;")
