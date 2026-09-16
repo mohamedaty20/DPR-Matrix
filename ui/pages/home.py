@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from nicegui import ui, run
 
+from config import settings
 from core.aggregator import aggregate
 from core.db import save_report, cleanup_old_reports
 from core.errors import DPRMatrixError
@@ -19,13 +20,10 @@ _BADGE_LABEL = {
     "error":      "Error",
 }
 
-# Wall-clock ceiling for one full aggregation run. Acts as a watchdog;
-# aggregate() returns None if tripped, and the UI shows "Cancelled".
 _AGGREGATE_TIMEOUT_SEC = 600.0
 
 
 def render() -> None:
-    # ── Header ────────────────────────────────────────────────────────
     ui.label("DPR-Matrix").classes("dpr-app-title")
     ui.label(
         "Upload site reports (PDF · XLSX · XLS · PNG · JPG · TXT). "
@@ -40,11 +38,10 @@ def render() -> None:
         q = state.queue_files()
         done = sum(1 for f in q if f["status"] == "done")
         session_label.text = (
-            f"{len(q)} file(s) queued · {done} completed · "
+            f"{len(q)} / {settings.MAX_FILES} file(s) queued · {done} completed · "
             f"report: {'ready' if state.report() else 'none'}"
         )
 
-    # ── File queue panel ──────────────────────────────────────────────
     @ui.refreshable
     def file_queue_panel() -> None:
         q = state.queue_files()
@@ -70,10 +67,15 @@ def render() -> None:
         file_queue_panel.refresh()
         refresh_session_label()
 
-    # ── Upload ────────────────────────────────────────────────────────
     async def handle_upload(e) -> None:
         filename = e.name
         try:
+            # MAX_FILES enforcement — counts only this user's queue.
+            if len(state.queue_files()) >= settings.MAX_FILES:
+                raise DPRMatrixError(
+                    f"Queue is at the {settings.MAX_FILES}-file limit. "
+                    f"Remove a file or click Aggregate to proceed."
+                )
             data = e.content.read()
             validate_upload(filename, data)
             state.enqueue(filename, data, e.type or "")
@@ -95,22 +97,18 @@ def render() -> None:
             on_upload=handle_upload,
             multiple=True,
             auto_upload=True,
-            max_file_size=15 * 1024 * 1024,
+            max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
         ).props("accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt").classes("w-full")
         ui.label(
-            "Files are validated on drop and queued — nothing runs until you click Aggregate."
+            f"Files are validated on drop and queued — nothing runs until you click Aggregate. "
+            f"Up to {settings.MAX_FILES} files, {settings.MAX_UPLOAD_MB} MB each."
         ).classes("dpr-muted").style("margin-top: 10px;")
 
-    # ── Queue card ────────────────────────────────────────────────────
     with ui.card().classes("dpr-card w-full"):
         section_title("2 · Queue")
         file_queue_panel()
-        ui.label("").bind_text_from(
-            session_label, "text", lambda _: ""
-        )  # spacer no-op; label lives above
         refresh_session_label()
 
-    # ── Aggregate ─────────────────────────────────────────────────────
     running = {"active": False}
 
     async def run_aggregate() -> None:
@@ -125,12 +123,11 @@ def render() -> None:
         run_btn.disable()
         cancel_btn.enable()
         state.clear_cancel()
-        state.reset()  # clears docs/report/logs/events; keeps the queue
+        state.reset()
         state.log(f"[run] starting job on {len(q)} file(s)")
         ui.notify("Running…", color="green")
 
         try:
-            # ── Phase A: text extraction (fast, per-file) ─────────────
             docs: list = []
             total = len(q)
             for i, f in enumerate(q, start=1):
@@ -149,14 +146,10 @@ def render() -> None:
                     doc = await run.io_bound(route, data, f["name"], f["mime"])
                     doc.meta["bytes"] = len(data)
                     docs.append(doc)
-                    state.log(
-                        f"[text] ok · {f['name']} → {len(doc.raw_text)} chars"
-                    )
+                    state.log(f"[text] ok · {f['name']} → {len(doc.raw_text)} chars")
                 except Exception as ex:
                     state.set_status(f["token"], "error", str(ex))
-                    state.log(
-                        f"[text] fail · {f['name']}: {type(ex).__name__}: {ex}"
-                    )
+                    state.log(f"[text] fail · {f['name']}: {type(ex).__name__}: {ex}")
                 file_queue_panel.refresh()
 
             if state.is_cancelled():
@@ -170,12 +163,9 @@ def render() -> None:
                 return
 
             state.set_docs(docs)
-
-            # ── Phase B: LLM extraction + deterministic merge ─────────
             state.log(f"[llm] running Gemini extraction on {len(docs)} doc(s)")
 
             def on_event(kind: str, **payload) -> None:
-                # Called from a worker thread — must not touch the UI.
                 state.push_event(kind, **payload)
 
             report = await run.io_bound(
@@ -194,10 +184,10 @@ def render() -> None:
             state.set_report(report)
             state.log(
                 f"[ok] report ready · project={report.project_name!r} · "
-                f"{len(report.work_progress)} work rows"
+                f"{len(report.work_progress)} work rows · "
+                f"{len(report.conflicts)} conflict(s)"
             )
 
-            # ── Phase C: persist to Turso ─────────────────────────────
             try:
                 uploads_meta = [
                     {
@@ -215,7 +205,6 @@ def render() -> None:
             except Exception as db_ex:
                 state.log(f"[warn] DB save failed: {db_ex}")
 
-            # Mark every successfully-used file as done
             for f in state.queue_files():
                 if f["status"] != "error":
                     state.set_status(f["token"], "done")
@@ -247,7 +236,6 @@ def render() -> None:
                 .classes("dpr-btn-danger")
             cancel_btn.disable()
 
-    # ── Footer actions ────────────────────────────────────────────────
     def _clear_queue() -> None:
         state.clear_queue()
         file_queue_panel.refresh()
@@ -266,11 +254,9 @@ def render() -> None:
         ui.button("Clear Queue", on_click=_clear_queue)
         ui.button("New Session", on_click=_new_session)
 
-    # ── Log ───────────────────────────────────────────────────────────
     section_title("Activity Log")
     log_console()
 
-    # ── Event drain (worker thread → UI) ──────────────────────────────
     def _drain_events() -> None:
         events = state.drain_events()
         if not events:
