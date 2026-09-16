@@ -1,6 +1,9 @@
 """Reusable widgets."""
 from __future__ import annotations
+from html import escape
+
 from nicegui import ui
+
 from ui import state
 from ui.conflicts import conflict_banner, notes_banner
 
@@ -21,7 +24,6 @@ def log_console() -> ui.html:
 def _render_table(rows: list[dict]) -> None:
     if not rows:
         return
-    from html import escape as _esc
     keys: list[str] = []
     for r in rows:
         for k in r.keys():
@@ -31,7 +33,7 @@ def _render_table(rows: list[dict]) -> None:
         f'<th style="color:#00FF66;font-weight:700;padding:8px 10px;'
         f'text-align:left;background:#001a0a;'
         f'border-bottom:2px solid #00FF66;white-space:nowrap;">'
-        f'{_esc(k.replace("_", " ").title())}</th>' for k in keys
+        f'{escape(k.replace("_", " ").title())}</th>' for k in keys
     )
     body = ""
     for r in rows:
@@ -43,7 +45,7 @@ def _render_table(rows: list[dict]) -> None:
             cells += (
                 f'<td style="color:#ffffff;padding:6px 10px;'
                 f'border-bottom:1px solid #1f3f1f;vertical-align:top;">'
-                f'{_esc(str(v))}</td>'
+                f'{escape(str(v))}</td>'
             )
         body += f'<tr style="background:#0a0a0a;">{cells}</tr>'
     ui.html(
@@ -115,3 +117,67 @@ def report_preview() -> None:
         ui.label("Source Files").classes("dpr-title")
         for f in rpt.source_files:
             ui.label(f"• {f}").classes("text-white")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Pass 7.5 — Dashboard widgets
+# ═══════════════════════════════════════════════════════════════════════════
+
+def metadata_strip(items: list[tuple[str, str]]) -> None:
+    """Horizontal key/value strip. items = [(label, value), ...]"""
+    cells = "".join(
+        f'<div class="dpr-meta-item">'
+        f'  <div class="dpr-meta-label">{escape(str(k))}</div>'
+        f'  <div class="dpr-meta-value">{escape(str(v) or "—")}</div>'
+        f'</div>'
+        for k, v in items
+    )
+    ui.html(f'<div class="dpr-meta-strip">{cells}</div>').classes("w-full")
+
+
+def kpi_row(items: list[dict]) -> None:
+    """
+    items: list of {"label": str, "value": str|int, "sub": str, "tone": str}
+    tone ∈ {"", "primary", "warning", "danger"}
+    """
+    cards = ""
+    for it in items:
+        tone = f" dpr-kpi-{it['tone']}" if it.get("tone") else ""
+        sub = (
+            f'<div class="dpr-kpi-sub">{escape(str(it["sub"]))}</div>'
+            if it.get("sub") else ""
+        )
+        cards += (
+            f'<div class="dpr-kpi{tone}">'
+            f'  <div class="dpr-kpi-label">{escape(str(it["label"]))}</div>'
+            f'  <div class="dpr-kpi-value">{escape(str(it["value"]))}</div>'
+            f'  {sub}'
+            f'</div>'
+        )
+    ui.html(f'<div class="dpr-kpi-grid">{cards}</div>').classes("w-full")
+
+
+def bar_chart(title: str, items: list[tuple[str, float | int]],
+              *, unit: str = "") -> None:
+    """Horizontal bar chart. items = [(label, value), ...], any length."""
+    if not items:
+        return
+    max_val = max((v for _, v in items), default=0) or 1
+    rows = ""
+    for label, value in items:
+        pct = (float(value) / float(max_val)) * 100.0
+        rows += (
+            f'<div class="dpr-bar-row">'
+            f'  <span class="dpr-bar-label">{escape(str(label))}</span>'
+            f'  <div class="dpr-bar-track">'
+            f'    <div class="dpr-bar-fill" style="width:{pct:.1f}%"></div>'
+            f'  </div>'
+            f'  <span class="dpr-bar-value">{escape(str(value))}{escape(unit)}</span>'
+            f'</div>'
+        )
+    ui.html(
+        f'<div class="dpr-chart">'
+        f'  <div class="dpr-chart-title">{escape(title)}</div>'
+        f'  <div class="dpr-bar-chart">{rows}</div>'
+        f'</div>'
+    ).classes("w-full")
