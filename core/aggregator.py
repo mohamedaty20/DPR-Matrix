@@ -148,7 +148,9 @@ def _extract_json(raw: str) -> dict:
 # PASS 1 — per-file structured extraction
 # ═══════════════════════════════════════════════════════════════════════════
 def _extract_one(doc: ExtractedDocument) -> dict:
+    print(f"[agg] extracting {doc.filename} …", flush=True)
     raw = generate_text(_prompt_for(doc), json_mode=True)
+    print(f"[agg] {doc.filename} → {len(raw)} chars of JSON", flush=True)
     data = _extract_json(raw)
 
     # Attach this document's filename to every row's sources
