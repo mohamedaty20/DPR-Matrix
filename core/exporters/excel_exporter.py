@@ -117,8 +117,8 @@ def export_excel(report: AggregatedReport) -> bytes:
     _write_header_sheet(ws, report)
 
     # Sheet 2: Personnel
-    _write_list_sheet(wb.create_sheet("Personnel"), "Personnel on Site",
-                      report.personnel_on_site)
+    _write_list_sheet(wb.create_sheet("Personnel"), "Personnel",
+                      report.personnel)
 
     # Sheet 3: Work Progress
     _write_list_sheet(wb.create_sheet("Work Progress"), "Work Progress",
