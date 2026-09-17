@@ -1,4 +1,4 @@
-"""Results — report dashboard with left drawer + Summary tab."""
+"""Results — report dashboard. Items 10-23 implemented here."""
 from __future__ import annotations
 
 import base64
@@ -9,7 +9,6 @@ from nicegui import ui, run
 
 from core import analytics as A
 from core import quality as Q
-from core import risk as RISK
 from core import production as PROD
 from core import history as HIST
 from core import summary as SUM
@@ -18,13 +17,12 @@ from ui import state
 from ui.shell import page_shell
 from ui.components import (
     bar_list,
+    crew_rectangles,
     histogram,
     line_chart,
     matrix_view,
     panel,
-    ratio_bars,
     report_preview,
-    risk_forecast,
     section_title,
     stat_grid,
     top_list,
@@ -36,14 +34,27 @@ from ui.components import (
 # ═══════════════════════════════════════════════════════════════════════════
 _REPORT_CSS = """
 <style>
+/* ── Item 17 — Report Dashboard title larger + centered ─────────── */
+.dpr-page-header { align-items: center !important; text-align: center !important; }
+.dpr-page-title {
+  font-size: clamp(22px, 3.6vw, 30px) !important;
+  text-align: center !important;
+}
+.dpr-page-subtitle {
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* ── Drawer toggle — item 19 (professional arrow) ──────────────── */
 .dpr-drawer-toggle {
   position: fixed;
   top: 62px;
   left: 16px;
   z-index: 45;
-  width: 38px;
-  height: 38px;
-  border-radius: 10px;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
   background: #0c0c0f;
   border: 1px solid rgba(242,116,12,0.42);
   color: #F2740C;
@@ -51,10 +62,13 @@ _REPORT_CSS = """
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
+  font-size: 20px;
   line-height: 1;
-  padding: 0;
+  padding: 0 0 2px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
   box-shadow: 0 2px 14px rgba(0,0,0,0.55);
+  transition: border-color .12s ease, background .12s ease;
 }
 .dpr-drawer-toggle:hover {
   border-color: rgba(242,116,12,0.85);
@@ -64,6 +78,7 @@ _REPORT_CSS = """
   .dpr-drawer-toggle { left: 248px; }
 }
 
+/* ── Drawer shell ──────────────────────────────────────────────── */
 .dpr-drawer {
   position: fixed;
   top: 0;
@@ -135,22 +150,19 @@ _REPORT_CSS = """
   border-color: rgba(242,116,12,0.7);
 }
 
-/* Force visible text in drawer + report header */
+/* Inputs inside drawer + header */
 .dpr-drawer .q-field__native,
 .dpr-drawer .q-field__native input,
-.dpr-drawer .q-field__native textarea,
 .dpr-drawer input, .dpr-drawer textarea,
 .dpr-report-header .q-field__native,
 .dpr-report-header .q-field__native input,
 .dpr-report-header input, .dpr-report-header textarea,
-.q-field__native, .q-field__native input, .q-field__native textarea,
 input.q-field__native, textarea.q-field__native {
   color: #e8e8ea !important;
   -webkit-text-fill-color: #e8e8ea !important;
   caret-color: #F2740C !important;
   font-size: 12.5px !important;
 }
-.dpr-drawer .q-field__native::placeholder,
 .dpr-drawer input::placeholder,
 .dpr-report-header input::placeholder {
   color: #4f4f56 !important;
@@ -170,7 +182,7 @@ input.q-field__native, textarea.q-field__native {
   max-height: 80px;
   object-fit: contain;
   display: block;
-  margin-bottom: 10px;
+  margin: 12px 0 10px 0;
   border-radius: 6px;
   background: #050506;
   padding: 8px;
@@ -187,6 +199,7 @@ input.q-field__native, textarea.q-field__native {
   margin-bottom: 4px;
 }
 
+/* ── Report header (item 16 — reduced) ─────────────────────────── */
 .dpr-report-main {
   display: flex;
   flex-direction: column;
@@ -209,46 +222,55 @@ input.q-field__native, textarea.q-field__native {
 @media (max-width: 640px) {
   .dpr-report-header-grid { grid-template-columns: 1fr; }
 }
-.dpr-report-meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+.dpr-report-source-note {
+  color: #85858c;
+  font-size: 11px;
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid rgba(242,116,12,0.10);
 }
-.dpr-mini-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  background: rgba(242,116,12,0.08);
-  border: 1px solid rgba(242,116,12,0.20);
-  border-radius: 999px;
-  font-size: 10.5px;
-  color: #85858c;
-  font-weight: 600;
-}
-.dpr-mini-pill b { color: #e8e8ea; font-weight: 700; }
+.dpr-report-source-note b { color: #e8e8ea; font-weight: 600; }
 
-.dpr-action-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+/* ── Download block (item 15) ──────────────────────────────────── */
+.dpr-download-heading {
+  color: #c8c8cc;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  margin: 0 0 8px 0;
 }
-.dpr-btn-xs.q-btn {
-  min-height: 26px !important;
-  height: 26px !important;
-  padding: 0 10px !important;
-  font-size: 11px !important;
+.dpr-download-btn.q-btn {
+  background: transparent !important;
+  border: 1px solid #4a4a52 !important;
+  color: #c8c8cc !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  padding: 0 16px !important;
+  font-size: 11.5px !important;
   font-weight: 600 !important;
+  border-radius: 6px !important;
+  box-shadow: none !important;
+  letter-spacing: 0.04em;
+}
+.dpr-download-btn.q-btn:hover {
+  border-color: #F2740C !important;
+  color: #F2740C !important;
+  background: rgba(242,116,12,0.04) !important;
 }
 
+/* ── Tab row with Zones button (item 18) ───────────────────────── */
+.dpr-tabs-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.dpr-tabs { flex: 1; min-width: 0; }
 .dpr-tabs .q-tab {
-  min-height: 34px !important;
-  padding: 0 10px !important;
+  min-height: 36px !important;
+  padding: 0 12px !important;
   text-transform: none !important;
   letter-spacing: 0 !important;
   font-size: 11.5px !important;
@@ -256,7 +278,23 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-tabs .q-tab__label { font-size: 11.5px !important; }
 .dpr-tabs .q-tab__icon { font-size: 16px !important; }
+.dpr-zones-tab.q-btn {
+  min-height: 36px !important;
+  height: 36px !important;
+  padding: 0 14px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  border: 1px solid rgba(242,116,12,0.28) !important;
+  color: #c8c8cc !important;
+  background: transparent !important;
+  border-radius: 8px !important;
+}
+.dpr-zones-tab.q-btn:hover {
+  border-color: #F2740C !important;
+  color: #F2740C !important;
+}
 
+/* ── Summary cards ─────────────────────────────────────────────── */
 .dpr-sum-card {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
   border: 1px solid rgba(242,116,12,0.20);
@@ -266,11 +304,19 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-sum-title {
   color: #F2740C;
-  font-size: 10.5px;
+  font-size: 12.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   font-weight: 700;
   margin-bottom: 12px;
+}
+.dpr-sum-card-title-lg {
+  color: #F2740C;
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 14px;
 }
 .dpr-sum-table { width: 100%; border-collapse: collapse; }
 .dpr-sum-table th {
@@ -293,6 +339,108 @@ input.q-field__native, textarea.q-field__native {
 .dpr-sum-table td.num { text-align: right; color: #c8c8cc; font-size: 11.5px; }
 .dpr-sum-table td.crew { text-align: right; color: #F2740C; font-weight: 700; font-size: 12px; }
 .dpr-sum-table td.pct { color: #4f4f56; font-size: 10px; margin-left: 6px; }
+.dpr-bldg-link {
+  color: #F2740C;
+  cursor: pointer;
+  text-decoration: none;
+  font-weight: 600;
+  border-bottom: 1px dashed rgba(242,116,12,0.4);
+}
+.dpr-bldg-link:hover { color: #ffb020; border-bottom-color: #ffb020; }
+
+/* ── Interactive flag cards (items 10, 11) ─────────────────────── */
+.dpr-flag-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: rgba(242,116,12,0.04);
+  border: 1px solid rgba(242,116,12,0.22);
+  border-left: 3px solid #F2740C;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.dpr-flag-card:hover {
+  background: rgba(242,116,12,0.08);
+  border-color: rgba(242,116,12,0.5);
+}
+.dpr-flag-card.warn { border-left-color: #ffb020; }
+.dpr-flag-card.warn:hover { border-color: rgba(255,176,32,0.5); }
+.dpr-flag-card.danger { border-left-color: #ff4d6a; }
+.dpr-flag-card.danger:hover { border-color: rgba(255,77,106,0.5); }
+.dpr-flag-card.info {
+  cursor: default;
+  border-left-color: #4f4f56;
+  background: rgba(255,255,255,0.015);
+}
+.dpr-flag-card.info:hover {
+  background: rgba(255,255,255,0.015);
+  border-color: rgba(242,116,12,0.22);
+}
+.dpr-flag-label {
+  color: #e8e8ea;
+  font-size: 12.5px;
+  line-height: 1.45;
+  flex: 1;
+}
+.dpr-flag-label b { color: #F2740C; font-weight: 700; }
+.dpr-flag-action {
+  color: #85858c;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.dpr-flag-action:hover { color: #F2740C; }
+
+/* ── Modal card look ───────────────────────────────────────────── */
+.q-dialog .q-card, .q-dialog .dpr-card {
+  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%) !important;
+  border: 1px solid rgba(242,116,12,0.35) !important;
+}
+.dpr-modal-row {
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(242,116,12,0.10);
+}
+.dpr-modal-row:last-child { border-bottom: none; }
+.dpr-modal-field {
+  color: #e8e8ea;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.dpr-modal-values {
+  color: #85858c;
+  font-size: 11px;
+  line-height: 1.6;
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 8px;
+}
+.dpr-modal-pick {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.dpr-modal-pick label {
+  color: #c8c8cc;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(242,116,12,0.18);
+}
+.dpr-modal-pick label:hover {
+  border-color: rgba(242,116,12,0.5);
+  color: #e8e8ea;
+}
 </style>
 """
 
@@ -345,13 +493,14 @@ def _download_txt():
 
 
 def _download_row():
-    with ui.element("div").classes("dpr-download-bar"):
-        with ui.element("div").classes("dpr-download-bar-label"):
-            ui.html(f"Download report<small>{_stem()}.pdf · .xlsx · .txt</small>")
+    """Item 15 — no filled background, thin grey outline per button,
+    'Download' heading above."""
+    with ui.element("div").style("padding: 4px 2px 2px 2px;"):
+        ui.html('<div class="dpr-download-heading">Download</div>')
         with ui.row().classes("gap-2 items-center"):
-            ui.button("PDF",   on_click=_download_pdf).classes("dpr-btn-primary")
-            ui.button("Excel", on_click=_download_excel)
-            ui.button("TXT",   on_click=_download_txt)
+            ui.button("PDF", on_click=_download_pdf).classes("dpr-download-btn")
+            ui.button("Excel", on_click=_download_excel).classes("dpr-download-btn")
+            ui.button("TXT", on_click=_download_txt).classes("dpr-download-btn")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -415,8 +564,24 @@ def _on_field_changed(key: str, value: str) -> None:
         setattr(rpt, dst, value)
 
 
+def _persist_and_reload(rpt, message: str = "Saved") -> None:
+    """Update the stored payload and refresh the page (items 10, 11)."""
+    rid = state.report_id()
+    if rid is None:
+        ui.notify("No saved report — aggregate first", color="orange",
+                  position="top")
+        return
+    try:
+        update_report_payload(rid, rpt)
+        ui.notify(message, color="green", position="top")
+        ui.navigate.to("/results")
+    except Exception as ex:
+        state.log(f"[err] persist: {type(ex).__name__}: {ex}")
+        ui.notify(f"Save failed: {ex}", color="red", position="top")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
-# Project details drawer body
+# Project details drawer body — item 19 ordering
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_project_details_body() -> None:
     pd = state.project_details()
@@ -429,6 +594,21 @@ def _render_project_details_body() -> None:
                 placeholder=placeholder,
                 on_change=lambda e, k=key: _on_field_changed(k, e.value or ""),
             ).props("dense outlined").classes("w-full")
+
+    # Item 19 — Project Name FIRST, logo LAST.
+    _field("project_name", "Project name", "e.g. WTG Foundation Package")
+    _field("location",     "Location",     "e.g. Ras Ghareb, Zone B")
+    _field("company_name", "Company name", "e.g. Orascom Construction")
+    _field("contractor",   "Contractor / Sub", "e.g. Hassan Allam")
+    _field("consultant",   "Consultant",   "e.g. Dar Al-Handasah")
+    _field("shift",        "Shift",        "e.g. Day")
+
+    # ── Logo at the bottom ─────────────────────────────────────────
+    ui.html(
+        '<div style="margin-top:14px;padding-top:12px;'
+        'border-top:1px solid rgba(242,116,12,0.14);"></div>'
+    )
+    ui.label("Company logo").classes("dpr-proj-label")
 
     logo = state.get_project_logo()
     if logo:
@@ -476,14 +656,6 @@ def _render_project_details_body() -> None:
             "dpr-btn-danger dpr-btn-xs w-full"
         ).style("margin-top: 6px;")
 
-    _field("project_name", "Project name", "e.g. WTG Foundation Package")
-    _field("location",     "Location",     "e.g. Ras Ghareb, Zone B")
-    _field("company_name", "Company name", "e.g. Orascom Construction")
-    _field("contractor",   "Contractor / Sub", "e.g. Hassan Allam")
-    _field("consultant",   "Consultant",   "e.g. Dar Al-Handasah")
-    _field("weather",      "Weather",      "e.g. Clear, 34°C")
-    _field("shift",        "Shift",        "e.g. Day")
-
     async def _save_details():
         _sync_report_from_session()
         rid = state.report_id()
@@ -506,11 +678,11 @@ def _render_project_details_body() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Report header
+# Report header — item 16 reduced
 # ═══════════════════════════════════════════════════════════════════════════
-def _render_report_header(rpt, on_reconcile, on_targets):
+def _render_report_header(rpt) -> None:
     with ui.element("div").classes("dpr-report-header"):
-        ui.html('<div style="color:#22c55e;font-size:10.5px;'
+        ui.html('<div style="color:#F2740C;font-size:10.5px;'
                 'letter-spacing:0.14em;text-transform:uppercase;'
                 'font-weight:700;margin-bottom:10px;">Report header</div>')
         with ui.element("div").classes("dpr-report-header-grid"):
@@ -533,40 +705,332 @@ def _render_report_header(rpt, on_reconcile, on_targets):
                     on_change=_on_prep,
                 ).props("dense outlined").classes("w-full")
 
-        q = Q.compute_quality(rpt)
-        with ui.element("div").classes("dpr-report-meta-row"):
-            ui.html(
-                f'<span class="dpr-mini-pill">'
-                f'Report <b>#{state.report_id() or "—"}</b></span>'
-                f'<span class="dpr-mini-pill">'
-                f'<b>{len(rpt.work_progress)}</b> work rows</span>'
-                f'<span class="dpr-mini-pill">'
-                f'Quality <b>{q.grade}</b> ({q.score}/100)</span>'
-                f'<span class="dpr-mini-pill">'
-                f'<b>{len(rpt.source_files)}</b> source file(s)</span>'
-                f'<span class="dpr-mini-pill">'
-                f'<b>{len(rpt.conflicts)}</b> conflict(s)</span>'
-            )
-
-        with ui.element("div").classes("dpr-action-row"):
-            ui.button("Reconcile Sources", on_click=on_reconcile).classes(
-                "dpr-btn-xs"
-            )
-            ui.button("Set targets", on_click=on_targets).classes("dpr-btn-xs")
-            ui.button("Zones board",
-                      on_click=lambda: ui.navigate.to("/zones")).classes(
-                "dpr-btn-xs"
-            )
+        ui.html(
+            f'<div class="dpr-report-source-note">'
+            f'<b>{len(rpt.source_files)}</b> source file(s)'
+            f'</div>'
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Summary tab — decision-making view
+# Item 10 — hard conflict resolution modal
+# ═══════════════════════════════════════════════════════════════════════════
+def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
+    """Modal listing each hard conflict, letting the user choose:
+       (a) trust the AI-recommended resolution, or (b) drop the conflict.
+       On confirm, updates rpt.conflicts and persists to Turso.
+    """
+    # Track per-conflict pick. Default = keep the AI-resolved value.
+    picks: dict[int, str] = {i: "keep" for i in range(len(conflicts))}
+
+    with ui.dialog() as dlg, ui.card().classes("dpr-card").style(
+        "min-width: min(560px, 94vw); max-width: 620px; max-height: 82vh; "
+        "overflow-y: auto;"
+    ):
+        ui.html(
+            f'<div class="dpr-sum-title" style="margin-bottom:8px;">'
+            f'Resolve {len(conflicts)} field conflict(s)</div>'
+        )
+        ui.html(
+            '<div style="color:#85858c;font-size:11.5px;line-height:1.55;'
+            'margin-bottom:14px;">'
+            'Each item below shows what every source said for the same '
+            'field. Choose the AI-recommended value, or drop the conflict.'
+            '</div>'
+        )
+
+        for i, c in enumerate(conflicts):
+            field = escape(str(c.get("field", "?")))
+            values = c.get("values", []) or []
+            resolved = escape(str(c.get("resolution", "") or "—"))
+            reason = escape(str(c.get("reason", "") or ""))
+
+            with ui.element("div").classes("dpr-modal-row"):
+                ui.html(f'<div class="dpr-modal-field">{field}</div>')
+                vals_html = "".join(
+                    f'<div>· {escape(str(v))}</div>' for v in values
+                )
+                ui.html(f'<div class="dpr-modal-values">{vals_html}</div>')
+                ui.html(
+                    f'<div style="color:#F2740C;font-size:11.5px;'
+                    f'  font-weight:600;margin-bottom:8px;">'
+                    f'AI recommends: {resolved}</div>'
+                )
+                if reason:
+                    ui.html(
+                        f'<div style="color:#4f4f56;font-size:10.5px;'
+                        f'  font-style:italic;margin-bottom:8px;">'
+                        f'{reason}</div>'
+                    )
+
+                def _set(idx=i, val="keep"):
+                    picks[idx] = val
+
+                with ui.element("div").classes("dpr-modal-pick"):
+                    ui.html(
+                        f'<label onclick="this.parentElement'
+                        f'.querySelectorAll(\'label\').forEach'
+                        f'(l=>l.style.borderColor=\'rgba(242,116,12,0.18)\');'
+                        f'this.style.borderColor=\'#F2740C\';'
+                        f'">'
+                        f'  <input type="radio" name="cf-{i}" checked '
+                        f'         value="keep" '
+                        f'         onchange="'
+                        f'var el=this.closest(\'.dpr-modal-row\');'
+                        f'">'
+                        f'  Accept AI choice'
+                        f'</label>'
+                        f'<label onclick="this.parentElement'
+                        f'.querySelectorAll(\'label\').forEach'
+                        f'(l=>l.style.borderColor=\'rgba(242,116,12,0.18)\');'
+                        f'this.style.borderColor=\'#ff4d6a\';">'
+                        f'  <input type="radio" name="cf-{i}" '
+                        f'         value="drop">'
+                        f'  Remove conflict'
+                        f'</label>'
+                    )
+                    # Wire the radio values into `picks` via on_change
+                    def _radio_handler(e, idx=i):
+                        try:
+                            picks[idx] = "drop" if e.value == "drop" else "keep"
+                        except Exception:
+                            picks[idx] = "keep"
+                    # We attach a single hidden radio group per row using
+                    # NiceGUI's ui.radio is heavier; JS above keeps the
+                    # chosen visual state and we read it on confirm via
+                    # a compact fallback: accept = default.
+                    # Simpler: expose two small NiceGUI buttons per row.
+                    ui.button(
+                        "Accept",
+                        on_click=lambda idx=i: (
+                            picks.__setitem__(idx, "keep"),
+                            ui.notify("Marked: accept AI choice",
+                                      color="green", position="top",
+                                      group=f"cf-{idx}"),
+                        ),
+                    ).classes("dpr-btn-xs")
+                    ui.button(
+                        "Remove",
+                        on_click=lambda idx=i: (
+                            picks.__setitem__(idx, "drop"),
+                            ui.notify("Marked: remove conflict",
+                                      color="orange", position="top",
+                                      group=f"cf-{idx}"),
+                        ),
+                    ).classes("dpr-btn-danger dpr-btn-xs")
+
+        def _confirm():
+            new_conflicts = []
+            # Rebuild the conflict list — hard conflicts whose idx was
+            # marked "drop" are removed; otherwise they stay with the
+            # AI-recommended resolution recorded.
+            # We match by identity order from the original list.
+            for c in rpt.conflicts:
+                if c in conflicts:
+                    idx = conflicts.index(c)
+                    if picks.get(idx) == "drop":
+                        continue
+                    c["resolved_by_user"] = True
+                new_conflicts.append(c)
+            rpt.conflicts = new_conflicts
+            _persist_and_reload(
+                rpt,
+                f"Conflict resolution saved ({len(conflicts)} handled)",
+            )
+            dlg.close()
+
+        with ui.row().classes("gap-2 mt-3 justify-end w-full"):
+            ui.button("Cancel", on_click=dlg.close).classes("dpr-btn-xs")
+            ui.button("Confirm", on_click=_confirm).classes(
+                "dpr-btn-primary dpr-btn-xs"
+            )
+
+    dlg.open()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Item 11 — "Some headers should be unified" modal
+# ═══════════════════════════════════════════════════════════════════════════
+def _open_unify_headers_modal(rpt) -> None:
+    """Show every activity label currently in use, let the user merge
+    synonyms by picking a canonical name and marking others for rename."""
+    from collections import Counter
+    activity_counts: Counter = Counter()
+    for r in rpt.work_progress:
+        a = (r.get("activity") or "").strip()
+        if a:
+            activity_counts[a] += 1
+
+    if not activity_counts:
+        ui.notify("No activity headers to unify", color="orange",
+                  position="top")
+        return
+
+    all_acts = sorted(activity_counts.keys(), key=lambda x: -activity_counts[x])
+    # Map original -> canonical (defaults to itself = no change)
+    rename_map: dict[str, str] = {a: a for a in all_acts}
+
+    with ui.dialog() as dlg, ui.card().classes("dpr-card").style(
+        "min-width: min(600px, 94vw); max-width: 680px; max-height: 82vh; "
+        "overflow-y: auto;"
+    ):
+        ui.html(
+            '<div class="dpr-sum-title" style="margin-bottom:8px;">'
+            'Unify activity headers</div>'
+        )
+        ui.html(
+            '<div style="color:#85858c;font-size:11.5px;line-height:1.55;'
+            'margin-bottom:14px;">'
+            'These are the activity labels found across your uploaded '
+            'sources. If two labels describe the same work, pick a single '
+            'canonical name — the website and the stored report will be '
+            'updated immediately on confirm.'
+            '</div>'
+        )
+
+        selects: dict[str, ui.select] = {}
+        for a in all_acts:
+            with ui.element("div").classes("dpr-modal-row"):
+                ui.html(
+                    f'<div class="dpr-modal-field">'
+                    f'{escape(a)} '
+                    f'<span style="color:#4f4f56;font-size:10.5px;">'
+                    f'({activity_counts[a]} row(s))</span>'
+                    f'</div>'
+                )
+                selects[a] = ui.select(
+                    options=all_acts,
+                    value=a,
+                    label="Canonical name",
+                    on_change=lambda e, src=a: rename_map.__setitem__(
+                        src, e.value or src
+                    ),
+                ).props("dense outlined").classes("w-full")
+
+        def _confirm():
+            changed = 0
+            for r in rpt.work_progress:
+                a = (r.get("activity") or "").strip()
+                if a in rename_map and rename_map[a] != a:
+                    r["activity"] = rename_map[a]
+                    changed += 1
+            if changed == 0:
+                ui.notify("No changes to apply", color="orange",
+                          position="top")
+                dlg.close()
+                return
+            _persist_and_reload(rpt, f"Unified {changed} row(s)")
+
+        with ui.row().classes("gap-2 mt-3 justify-end w-full"):
+            ui.button("Cancel", on_click=dlg.close).classes("dpr-btn-xs")
+            ui.button("Confirm", on_click=_confirm).classes(
+                "dpr-btn-primary dpr-btn-xs"
+            )
+
+    dlg.open()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Item 12 — building detail modal
+# ═══════════════════════════════════════════════════════════════════════════
+def _open_building_detail_modal(rpt, building_row: dict) -> None:
+    bldg = str(building_row.get("building", "—"))
+    rows = [
+        r for r in rpt.work_progress
+        if (r.get("building") or "—").strip() == bldg
+    ]
+
+    with ui.dialog() as dlg, ui.card().classes("dpr-card").style(
+        "min-width: min(720px, 96vw); max-width: 820px; max-height: 82vh; "
+        "overflow-y: auto;"
+    ):
+        ui.html(
+            f'<div class="dpr-sum-title" style="margin-bottom:6px;">'
+            f'Building {escape(bldg)} — full extracted data</div>'
+        )
+        ui.html(
+            f'<div style="color:#85858c;font-size:11px;margin-bottom:12px;">'
+            f'{building_row.get("rows", 0)} row(s) · '
+            f'{building_row.get("crew", 0)} crew · '
+            f'{building_row.get("skilled", 0)} skilled · '
+            f'{building_row.get("assistants", 0)} assistants · '
+            f'{building_row.get("floors", 0)} floor(s)'
+            f'</div>'
+        )
+
+        if not rows:
+            ui.html('<div class="dpr-panel-empty">'
+                    'No detailed rows for this building.</div>')
+        else:
+            head = "".join(
+                f'<th style="color:#F2740C;font-size:10px;'
+                f'padding:5px 8px;text-align:{align};'
+                f'border-bottom:1px solid #F2740C;'
+                f'background:#2a1206;text-transform:uppercase;'
+                f'letter-spacing:0.05em;">{lbl}</th>'
+                for lbl, align in [
+                    ("Floor", "left"), ("Activity", "left"),
+                    ("Skilled", "right"), ("Assistant", "right"),
+                    ("Crew", "right"),
+                    ("Quantity", "right"), ("Unit", "left"),
+                    ("Progress", "right"), ("Notes", "left"),
+                ]
+            )
+            body = ""
+            for i, r in enumerate(rows):
+                bg = "#0a0a0a" if i % 2 == 0 else "#0b0d0e"
+                notes = escape(str(r.get("notes") or "—"))
+                body += (
+                    f'<tr style="background:{bg};">'
+                    f'<td style="padding:5px 8px;color:#e8e8ea;font-size:11.5px;">'
+                    f'  {escape(str(r.get("floor") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#e8e8ea;font-size:11.5px;">'
+                    f'  {escape(str(r.get("activity") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#c8c8cc;font-size:11.5px;'
+                    f'    text-align:right;">'
+                    f'  {escape(str(r.get("skilled") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#c8c8cc;font-size:11.5px;'
+                    f'    text-align:right;">'
+                    f'  {escape(str(r.get("helpers") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#F2740C;font-size:11.5px;'
+                    f'    text-align:right;font-weight:700;">'
+                    f'  {escape(str(r.get("crew_total") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#c8c8cc;font-size:11.5px;'
+                    f'    text-align:right;">'
+                    f'  {escape(str(r.get("quantity") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#85858c;font-size:11px;">'
+                    f'  {escape(str(r.get("unit") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#c8c8cc;font-size:11.5px;'
+                    f'    text-align:right;">'
+                    f'  {escape(str(r.get("progress_pct") or "—"))}</td>'
+                    f'<td style="padding:5px 8px;color:#85858c;font-size:11px;">'
+                    f'  {notes}</td>'
+                    f'</tr>'
+                )
+            ui.html(
+                '<div style="overflow-x:auto;background:#0a0a0a;'
+                'border:1px solid rgba(242,116,12,0.18);border-radius:8px;">'
+                '<table style="border-collapse:collapse;background:#0a0a0a;'
+                'width:100%;">'
+                f'<thead><tr>{head}</tr></thead>'
+                f'<tbody>{body}</tbody>'
+                '</table></div>'
+            )
+
+        with ui.row().classes("gap-2 mt-3 justify-end w-full"):
+            ui.button("Close", on_click=dlg.close).classes("dpr-btn-xs")
+
+    dlg.open()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Summary tab — items 10, 11, 12, 13, 15, 16
 # ═══════════════════════════════════════════════════════════════════════════
 def _summary_tab(rpt):
     s = SUM.compute(rpt)
 
     colors = {
-        "on_track": ("#22c55e", "rgba(34,197,94,0.10)", "rgba(34,197,94,0.35)"),
+        "on_track": ("#F2740C", "rgba(242,116,12,0.08)", "rgba(242,116,12,0.35)"),
         "attention": ("#ffb020", "rgba(255,176,32,0.10)", "rgba(255,176,32,0.35)"),
         "at_risk": ("#ff4d6a", "rgba(255,77,106,0.10)", "rgba(255,77,106,0.35)"),
     }
@@ -590,24 +1054,21 @@ def _summary_tab(rpt):
         f'</div>'
     )
 
-    # ── Executive summary ────────────────────────────────────────────
+    # ── Item 13 — Executive Summary title larger ─────────────────────
     ui.html(
         f'<div class="dpr-sum-card">'
-        f'  <div class="dpr-sum-title">Executive summary</div>'
+        f'  <div class="dpr-sum-card-title-lg">Executive summary</div>'
         f'  <div style="color:#e8e8ea;font-size:12.5px;line-height:1.6;">'
         f'    {escape(s["exec_summary"])}'
         f'  </div>'
         f'</div>'
     )
 
-    # ── Grand totals ─────────────────────────────────────────────────
+    # ── Grand totals — item 12b: Work Rows KPI removed ───────────────
     stat_grid([
         {"label": "Total Crew", "value": A.fmt_count(s["total_crew"]),
-         "sub": f"{s['skilled']} skilled · {s['helpers']} helpers",
+         "sub": f"{s['skilled']} skilled · {s['assistants']} assistants",
          "tone": "primary"},
-        {"label": "Work Rows", "value": s["total_rows"],
-         "sub": f"{s['total_buildings']} buildings · "
-                f"{s['total_activities']} activities"},
         {"label": "Avg Progress", "value": f"{s['avg_progress']:.0f}%",
          "sub": "across reported rows"},
         {"label": "Quality Grade", "value": s["quality"].grade,
@@ -615,16 +1076,17 @@ def _summary_tab(rpt):
          "tone": s["grade_tone"]},
     ])
 
-    # ── Crew distribution by building ────────────────────────────────
+    # ── Crew distribution by building — item 12 ──────────────────────
     if s["buildings"]:
         rows = ""
         for b in s["buildings"]:
+            bldg_label = escape(str(b["building"]))
             rows += (
                 f'<tr>'
-                f'<td>Building {escape(str(b["building"]))}</td>'
+                f'<td><span class="dpr-bldg-link" data-bldg="{bldg_label}">'
+                f'Building {bldg_label}</span></td>'
                 f'<td class="num">{b["floors"]}</td>'
                 f'<td class="num">{b["activities"]}</td>'
-                f'<td>{escape(str(b["top_activity"]))}</td>'
                 f'<td class="crew">{b["crew"]}</td>'
                 f'</tr>'
             )
@@ -632,12 +1094,11 @@ def _summary_tab(rpt):
             f'<div class="dpr-sum-card">'
             f'  <div class="dpr-sum-title">Crew distribution by building</div>'
             f'  <div style="overflow-x:auto;">'
-            f'  <table class="dpr-sum-table">'
+            f'  <table class="dpr-sum-table" id="dpr-crew-dist">'
             f'    <thead><tr>'
             f'      <th>Building</th>'
-            f'      <th class="num">Floors</th>'
-            f'      <th class="num">Activities</th>'
-            f'      <th>Top activity</th>'
+            f'      <th class="num">Floor - No</th>'
+            f'      <th class="num">No. of Activities</th>'
             f'      <th class="num">Crew</th>'
             f'    </tr></thead>'
             f'    <tbody>{rows}</tbody>'
@@ -645,7 +1106,54 @@ def _summary_tab(rpt):
             f'</div>'
         )
 
-    # ── Activity breakdown ───────────────────────────────────────────
+        # Attach click handler — read data-bldg from the clicked span
+        def _handle_bldg_click(e):
+            try:
+                bldg = None
+                if isinstance(e.args, dict):
+                    # NiceGUI's generic event args may carry the target
+                    bldg = e.args.get("bldg") or None
+                if bldg is None:
+                    return
+                row = next(
+                    (b for b in s["buildings"]
+                     if str(b["building"]) == str(bldg)),
+                    None,
+                )
+                if row:
+                    _open_building_detail_modal(rpt, row)
+            except Exception as ex:
+                state.log(f"[err] bldg click: {ex}")
+
+        # Simpler, robust approach — use per-building small buttons via JS
+        # We attach a click listener to the table that reads data-bldg.
+        ui.run_javascript(
+            """
+            (function() {
+              var tbl = document.getElementById('dpr-crew-dist');
+              if (!tbl || tbl.__dprBldgBound) return;
+              tbl.__dprBldgBound = true;
+              tbl.addEventListener('click', function(e) {
+                var el = e.target.closest('.dpr-bldg-link');
+                if (!el) return;
+                var bldg = el.getAttribute('data-bldg');
+                if (bldg) {
+                  window.__dprClickBldg = bldg;
+                  // Emit a synthetic event NiceGUI can catch via the
+                  // window — but simpler, call the emit method directly.
+                  if (window.emitEvent) {
+                    window.emitEvent('dpr_bldg_click', {bldg: bldg});
+                  }
+                }
+              });
+            })();
+            """
+        )
+
+        # Register a client-side event handler bridge
+        ui.on("dpr_bldg_click", _handle_bldg_click, [])
+
+    # ── Activity breakdown — item 11: remove Rows; new column set ───
     if s["activities"]:
         total_crew = s["total_crew"] or 1
         rows = ""
@@ -655,9 +1163,8 @@ def _summary_tab(rpt):
                 f'<tr>'
                 f'<td>{escape(str(a["activity"]))}</td>'
                 f'<td class="num">{a["buildings"]}</td>'
-                f'<td class="num">{a["rows"]}</td>'
-                f'<td class="crew">{a["crew"]}'
-                f'  <span class="pct">{pct:.0f}%</span></td>'
+                f'<td class="crew">{a["crew"]}</td>'
+                f'<td class="num">{pct:.0f}%</td>'
                 f'</tr>'
             )
         ui.html(
@@ -667,97 +1174,248 @@ def _summary_tab(rpt):
             f'  <table class="dpr-sum-table">'
             f'    <thead><tr>'
             f'      <th>Activity</th>'
-            f'      <th class="num">Buildings</th>'
-            f'      <th class="num">Rows</th>'
-            f'      <th class="num">Crew</th>'
+            f'      <th class="num">No. of Buildings</th>'
+            f'      <th class="num">Crew. No</th>'
+            f'      <th class="num">Percentage%</th>'
             f'    </tr></thead>'
             f'    <tbody>{rows}</tbody>'
             f'  </table></div>'
             f'</div>'
         )
 
-    # ── Decision flags ───────────────────────────────────────────────
-    if s["flags"]:
-        flags_html = "".join(
-            f'<div style="display:flex;align-items:flex-start;gap:10px;'
-            f'padding:9px 0;border-bottom:1px solid rgba(34,197,94,0.08);">'
-            f'  <span style="color:#ffb020;font-size:13px;'
-            f'      font-weight:700;line-height:1.2;">⚠</span>'
-            f'  <span style="color:#c8c8cc;font-size:12px;'
-            f'      line-height:1.55;">{escape(f)}</span>'
-            f'</div>'
-            for f in s["flags"]
-        )
-        ui.html(
-            f'<div class="dpr-sum-card">'
-            f'  <div class="dpr-sum-title">Decision flags</div>'
-            f'  {flags_html}'
-            f'</div>'
-        )
-    else:
-        ui.html(
-            f'<div class="dpr-sum-card">'
-            f'  <div class="dpr-sum-title">Decision flags</div>'
-            f'  <div style="color:#22c55e;font-size:12px;'
-            f'      line-height:1.55;">'
-            f'    No flags raised. Data is clean and consistent across '
-            f'    sources.</div>'
-            f'</div>'
-        )
+    # ── Decision flags — items 10 & 11 interactive ───────────────────
+    _render_decision_flags(rpt, s)
+
+
+def _render_decision_flags(rpt, s: dict) -> None:
+    """Render `structured_flags` as clickable cards (item 10, 11)."""
+    flags = s.get("structured_flags", [])
+
+    with ui.element("div").classes("dpr-sum-card"):
+        ui.html('<div class="dpr-sum-title">Decision flags</div>')
+
+        if not flags:
+            ui.html(
+                '<div style="color:#F2740C;font-size:12px;'
+                'line-height:1.55;">'
+                'No flags raised. Data is clean and consistent across '
+                'sources.</div>'
+            )
+            return
+
+        for flag in flags:
+            kind = flag.get("kind")
+            label = flag.get("label", "")
+
+            if kind == "hard_conflicts":
+                # Clickable
+                with ui.element("div").classes("dpr-flag-card danger").on(
+                    "click", lambda _e=None, c=flag["conflicts"]:
+                        _open_conflict_modal(rpt, c)
+                ):
+                    ui.html(f'<div class="dpr-flag-label">{escape(label)}</div>')
+                    ui.html('<div class="dpr-flag-action">Review ›</div>')
+
+            elif kind == "unify_headers":
+                with ui.element("div").classes("dpr-flag-card warn").on(
+                    "click", lambda _e=None: _open_unify_headers_modal(rpt)
+                ):
+                    ui.html(f'<div class="dpr-flag-label">{escape(label)}</div>')
+                    ui.html('<div class="dpr-flag-action">Review ›</div>')
+
+            elif kind == "quality_score":
+                ui.html(
+                    f'<div class="dpr-flag-card">'
+                    f'  <div class="dpr-flag-label">'
+                    f'    {escape(label)}</div>'
+                    f'</div>'
+                )
+
+            elif kind == "info":
+                for item in flag.get("items", []):
+                    ui.html(
+                        f'<div class="dpr-flag-card info">'
+                        f'  <div class="dpr-flag-label" '
+                        f'       style="color:#c8c8cc;">{escape(item)}</div>'
+                        f'</div>'
+                    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Risk section
+# Overview tab — items 21, 22
 # ═══════════════════════════════════════════════════════════════════════════
-def _render_risk_section():
-    cache_key = f"{state.report_id()}:7"
-    cached = state.risk_cache().get(cache_key)
-    container = ui.column().classes("w-full gap-2")
+def _overview_tab(rpt, mp, act, prog):
+    from core.normalize import to_float as _tf
 
-    async def run_analysis():
-        container.clear()
-        with container:
-            ui.label("Analyzing last 7 days with Gemini…").classes("dpr-muted")
-        try:
-            recent = await run.io_bound(HIST.load_recent, 7)
-            data = await run.io_bound(RISK.analyze, recent)
-            state.set_risk_cache(cache_key, data)
-            state.log(f"[risk] {data.get('overall_risk','?')}")
-            container.clear()
-            with container:
-                risk_forecast(data)
-        except Exception as ex:
-            state.log(f"[err] risk: {type(ex).__name__}: {ex}")
-            container.clear()
-            with container:
-                ui.label(f"Risk analysis failed: {ex}").classes("text-white")
+    # Activity crew aggregation (item 21: no row count)
+    act_crew: dict[str, int] = {}
+    act_bldgs: dict[str, set] = {}
+    for r in rpt.work_progress:
+        a = (r.get("activity") or "").strip()
+        if not a:
+            continue
+        sk = int(_tf(r.get("skilled")) or 0)
+        hp = int(_tf(r.get("helpers")) or 0)
+        act_crew[a] = act_crew.get(a, 0) + sk + hp
+        b = (r.get("building") or "").strip()
+        if b:
+            act_bldgs.setdefault(a, set()).add(b)
 
-    with ui.element("div").classes("dpr-panel dpr-panel-wide"):
-        with ui.element("div").classes("dpr-panel-header"):
-            ui.html('<div class="dpr-panel-title">'
-                    'Risk &amp; Bottleneck Forecast</div>')
-            ui.button("Run analysis" if not cached else "Refresh",
-                      on_click=run_analysis).classes("dpr-btn-primary dpr-btn-xs")
-        ui.html(
-            '<div class="dpr-panel-sub">'
-            'Gemini reads the last 7 days of saved reports and flags schedule, '
-            'quality, resource, weather, safety, and reporting risks.'
-            '</div>'
-        )
-        with container:
-            if cached:
-                risk_forecast(cached)
+    act_items = sorted(act_crew.items(), key=lambda kv: -kv[1])[:10]
+    total_places = sum(len(v) for v in act_bldgs.values())
+
+    # Item 22 — Crew Composition: top-20 rectangles
+    s = SUM.compute(rpt)
+    buildings = s.get("buildings", [])
+
+    with ui.element("div").classes("dpr-grid"):
+        with panel("Manpower by Building",
+                   subtitle="Skilled + assistant headcount per building.",
+                   total=A.fmt_count(mp.total), total_label="workers"):
+            if mp.by_building:
+                bar_list(mp.by_building[:10], show_pct=True)
             else:
-                ui.html('<div class="dpr-panel-empty">'
-                        'Click "Run analysis" to generate a forecast.</div>')
+                ui.html('<div class="dpr-panel-empty">No manpower.</div>')
+
+        with panel("Activity Breakdown",
+                   subtitle="Crew per activity.",
+                   total=A.fmt_count(total_places),
+                   total_label="No. Of Places Active Now"):
+            if act_items:
+                bar_list(act_items, show_pct=True)
+            else:
+                ui.html('<div class="dpr-panel-empty">No activities.</div>')
+
+        with panel("Progress Distribution",
+                   subtitle="Tasks per completion band.",
+                   total=f"{prog.reported}", total_label="reported"):
+            if prog.reported:
+                histogram(prog.buckets)
+            else:
+                ui.html('<div class="dpr-panel-empty">No progress values.</div>')
+
+        # Item 22 — Crew Composition as rectangles
+        with panel("Crew Composition",
+                   subtitle="Top 20 buildings by assistant count.",
+                   total=A.fmt_count(sum(b.get("assistants", 0)
+                                         for b in buildings)),
+                   total_label="assistants"):
+            crew_rectangles(
+                buildings,
+                on_click=lambda b: _open_building_detail_modal(rpt, b),
+                limit=20,
+            )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Production panel
+# Layout tab — item 23
 # ═══════════════════════════════════════════════════════════════════════════
-_TARGETS_OPENER: dict = {"fn": lambda: None}
+def _layout_tab(rpt):
+    matx = A.activity_matrix(rpt, top_n_acts=6)
+    zones = A.zone_density(rpt)
+    if matx["activities"] and matx["buildings"]:
+        with ui.element("div").classes("dpr-grid"):
+            with panel("Building × Activity Matrix",
+                       subtitle="Where each trade is deployed.", wide=True):
+                matrix_view(matx)
+    if zones:
+        with ui.element("div").classes("dpr-grid"):
+            with panel("Zone Density",
+                       subtitle="Work rows by zone.",
+                       total=A.fmt_count(sum(c for _, c in zones)),
+                       total_label="rows", wide=True):
+                top_list([(f"Zone {z}", c) for z, c in zones])
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Quality tab — unchanged
+# ═══════════════════════════════════════════════════════════════════════════
+def _quality_tab(rpt, q):
+    with ui.element("div").classes("dpr-grid"):
+        with panel("Data Quality Breakdown",
+                   subtitle="Four-dimension composite.",
+                   total=f"{q.score}", total_label="score"):
+            bars = [
+                ("Completeness",  q.completeness  * 100, 40),
+                ("Confidence",    q.confidence    * 100, 30),
+                ("Corroboration", q.corroboration * 100, 15),
+                ("Consistency",   q.consistency   * 100, 15),
+            ]
+            rows_html = ""
+            for label, pct, weight in bars:
+                rows_html += (
+                    f'<div class="dpr-bar-row">'
+                    f'  <span class="dpr-bar-label">{label} '
+                    f'    <span style="color:#4f4f56;font-size:9.5px;">'
+                    f'({weight}%)</span></span>'
+                    f'  <div class="dpr-bar-track">'
+                    f'    <div class="dpr-bar-fill" style="width:{pct:.1f}%"></div>'
+                    f'  </div>'
+                    f'  <span class="dpr-bar-value">{pct:.0f}%</span>'
+                    f'</div>'
+                )
+            ui.html(f'<div class="dpr-bars">{rows_html}</div>')
+
+        with panel("Field Coverage",
+                   subtitle="Percent of work rows containing each field.",
+                   total=f"{len(rpt.work_progress)}", total_label="rows"):
+            from core import anomaly as AN
+            cov = AN.compute_coverage(rpt)
+            html = '<div class="dpr-bars">'
+            for f in cov["fields"]:
+                pct = f["pct"]
+                tone = ("#F2740C" if pct >= 75
+                        else "#ffb020" if pct >= 40 else "#ff4d6a")
+                html += (
+                    f'<div class="dpr-bar-row">'
+                    f'  <span class="dpr-bar-label">{f["label"]}</span>'
+                    f'  <div class="dpr-bar-track">'
+                    f'    <div class="dpr-bar-fill" '
+                    f'         style="width:{pct:.1f}%;background:{tone};"></div>'
+                    f'  </div>'
+                    f'  <span class="dpr-bar-value">{f["count"]}/{f["total"]}'
+                    f'    <span class="dpr-bar-pct">{pct:.0f}%</span></span>'
+                    f'</div>'
+                )
+            html += "</div>"
+            ui.html(html)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Detailed tab — unchanged
+# ═══════════════════════════════════════════════════════════════════════════
+def _detailed_tab(rpt):
+    mats = A.materials_top(rpt, 20)
+    equip = A.equipment_status(rpt)
+    with ui.element("div").classes("dpr-grid"):
+        with panel("Top Materials",
+                   subtitle="Materials by quantity.",
+                   total=f"{len(mats)}", total_label="items"):
+            if mats:
+                top_list([
+                    (n, f"{int(q) if q.is_integer() else q:g} {u}".strip())
+                    for n, q, u in mats
+                ])
+            else:
+                ui.html('<div class="dpr-panel-empty">No materials.</div>')
+
+        with panel("Equipment Status",
+                   subtitle="Equipment by status.",
+                   total=A.fmt_count(sum(c for _, c in equip)) if equip else "",
+                   total_label="units"):
+            if equip:
+                bar_list(equip, show_pct=True)
+            else:
+                ui.html('<div class="dpr-panel-empty">No equipment.</div>')
+
+    with ui.card().classes("dpr-card w-full"):
+        section_title("Detailed Report", "Complete breakdown by section.")
+        report_preview()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Production panel — targets dialog still reachable
+# ═══════════════════════════════════════════════════════════════════════════
 def _render_production_panel(rpt):
     acts = sorted({
         (r.get("activity") or "").strip()
@@ -771,8 +1429,7 @@ def _render_production_panel(rpt):
         with chart_container:
             if not targets:
                 ui.html('<div class="dpr-panel-empty">'
-                        'No targets set. Click "Set targets" to add planned '
-                        'quantities per activity.</div>')
+                        'No targets set yet.</div>')
                 return
             try:
                 recent = HIST.load_recent(60)
@@ -796,7 +1453,7 @@ def _render_production_panel(rpt):
                             f'No data for "{act}" in the target window.</div>')
                     continue
                 var = curve["variance_pct"]
-                tone = "#22c55e" if var >= 0 else "#ff4d6a"
+                tone = "#F2740C" if var >= 0 else "#ff4d6a"
                 tgt = int(cfg["target"]) if float(cfg["target"]).is_integer() else cfg["target"]
                 ui.html(
                     f'<div style="display:flex;align-items:baseline;'
@@ -815,7 +1472,7 @@ def _render_production_panel(rpt):
                     [
                         {"name": "Planned", "color": "#4f4f56",
                          "points": [v for _, v in curve["planned"]]},
-                        {"name": "Actual",  "color": "#22c55e",
+                        {"name": "Actual",  "color": "#F2740C",
                          "points": [v for _, v in curve["actual"]]},
                     ],
                     x_labels=curve["x_labels"],
@@ -885,11 +1542,12 @@ def _render_production_panel(rpt):
 
         dlg.open()
 
-    _TARGETS_OPENER["fn"] = _open_targets_dialog
-
     with ui.element("div").classes("dpr-panel dpr-panel-wide"):
         with ui.element("div").classes("dpr-panel-header"):
             ui.html('<div class="dpr-panel-title">Production Curve</div>')
+            ui.button("Set targets",
+                      on_click=_open_targets_dialog).classes(
+                "dpr-btn-xs")
         ui.html(
             '<div class="dpr-panel-sub">'
             'Planned vs actual cumulative quantity per activity, from the '
@@ -897,143 +1555,6 @@ def _render_production_panel(rpt):
             '</div>'
         )
         _refresh_chart()
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Tabs
-# ═══════════════════════════════════════════════════════════════════════════
-def _overview_tab(rpt, mp, act, prog):
-    with ui.element("div").classes("dpr-grid"):
-        with panel("Manpower by Building",
-                   subtitle="Skilled + helper headcount per building.",
-                   total=A.fmt_count(mp.total), total_label="workers"):
-            if mp.by_building:
-                bar_list(mp.by_building[:10], show_pct=True)
-            else:
-                ui.html('<div class="dpr-panel-empty">No manpower.</div>')
-
-        with panel("Activity Breakdown",
-                   subtitle="Locations per activity.",
-                   total=A.fmt_count(act.total_locations),
-                   total_label="locations"):
-            if act.by_activity:
-                bar_list(act.by_activity[:10], show_pct=True)
-            else:
-                ui.html('<div class="dpr-panel-empty">No activities.</div>')
-
-        with panel("Progress Distribution",
-                   subtitle="Tasks per completion band.",
-                   total=f"{prog.reported}", total_label="reported"):
-            if prog.reported:
-                histogram(prog.buckets)
-            else:
-                ui.html('<div class="dpr-panel-empty">No progress values.</div>')
-
-        with panel("Crew Composition",
-                   subtitle="Skilled vs helpers per building.",
-                   total=A.fmt_count(mp.total), total_label="crew"):
-            eff = A.crew_efficiency(rpt)
-            if eff:
-                ratio_bars(eff[:8])
-            else:
-                ui.html('<div class="dpr-panel-empty">No crew data.</div>')
-
-
-def _layout_tab(rpt):
-    matx = A.activity_matrix(rpt, top_n_acts=6)
-    zones = A.zone_density(rpt)
-    if matx["activities"] and matx["buildings"]:
-        with ui.element("div").classes("dpr-grid"):
-            with panel("Building × Activity Matrix",
-                       subtitle="Where each trade is deployed.", wide=True):
-                matrix_view(matx)
-    if zones:
-        with ui.element("div").classes("dpr-grid"):
-            with panel("Zone Density",
-                       subtitle="Work rows by zone.",
-                       total=A.fmt_count(sum(c for _, c in zones)),
-                       total_label="rows", wide=True):
-                top_list([(f"Zone {z}", c) for z, c in zones])
-
-
-def _quality_tab(rpt, q):
-    with ui.element("div").classes("dpr-grid"):
-        with panel("Data Quality Breakdown",
-                   subtitle="Four-dimension composite.",
-                   total=f"{q.score}", total_label="score"):
-            bars = [
-                ("Completeness",  q.completeness  * 100, 40),
-                ("Confidence",    q.confidence    * 100, 30),
-                ("Corroboration", q.corroboration * 100, 15),
-                ("Consistency",   q.consistency   * 100, 15),
-            ]
-            rows_html = ""
-            for label, pct, weight in bars:
-                rows_html += (
-                    f'<div class="dpr-bar-row">'
-                    f'  <span class="dpr-bar-label">{label} '
-                    f'    <span style="color:#4f4f56;font-size:9.5px;">'
-                    f'({weight}%)</span></span>'
-                    f'  <div class="dpr-bar-track">'
-                    f'    <div class="dpr-bar-fill" style="width:{pct:.1f}%"></div>'
-                    f'  </div>'
-                    f'  <span class="dpr-bar-value">{pct:.0f}%</span>'
-                    f'</div>'
-                )
-            ui.html(f'<div class="dpr-bars">{rows_html}</div>')
-
-        with panel("Field Coverage",
-                   subtitle="Percent of work rows containing each field.",
-                   total=f"{len(rpt.work_progress)}", total_label="rows"):
-            from core import anomaly as AN
-            cov = AN.compute_coverage(rpt)
-            html = '<div class="dpr-bars">'
-            for f in cov["fields"]:
-                pct = f["pct"]
-                tone = ("#22c55e" if pct >= 75
-                        else "#ffb020" if pct >= 40 else "#ff4d6a")
-                html += (
-                    f'<div class="dpr-bar-row">'
-                    f'  <span class="dpr-bar-label">{f["label"]}</span>'
-                    f'  <div class="dpr-bar-track">'
-                    f'    <div class="dpr-bar-fill" '
-                    f'         style="width:{pct:.1f}%;background:{tone};"></div>'
-                    f'  </div>'
-                    f'  <span class="dpr-bar-value">{f["count"]}/{f["total"]}'
-                    f'    <span class="dpr-bar-pct">{pct:.0f}%</span></span>'
-                    f'</div>'
-                )
-            html += "</div>"
-            ui.html(html)
-
-
-def _detailed_tab(rpt):
-    mats = A.materials_top(rpt, 20)
-    equip = A.equipment_status(rpt)
-    with ui.element("div").classes("dpr-grid"):
-        with panel("Top Materials",
-                   subtitle="Materials by quantity.",
-                   total=f"{len(mats)}", total_label="items"):
-            if mats:
-                top_list([
-                    (n, f"{int(q) if q.is_integer() else q:g} {u}".strip())
-                    for n, q, u in mats
-                ])
-            else:
-                ui.html('<div class="dpr-panel-empty">No materials.</div>')
-
-        with panel("Equipment Status",
-                   subtitle="Equipment by status.",
-                   total=A.fmt_count(sum(c for _, c in equip)) if equip else "",
-                   total_label="units"):
-            if equip:
-                bar_list(equip, show_pct=True)
-            else:
-                ui.html('<div class="dpr-panel-empty">No equipment.</div>')
-
-    with ui.card().classes("dpr-card w-full"):
-        section_title("Detailed Report", "Complete breakdown by section.")
-        report_preview()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1055,7 +1576,7 @@ def render():
 
         _hydrate_session_from_report()
 
-        # ── Drawer + backdrop + toggle ──────────────────────────────
+        # ── Drawer + backdrop + toggle — item 19 ────────────────────
         backdrop = ui.element("div").classes("dpr-drawer-backdrop")
 
         drawer = ui.element("div").classes("dpr-drawer")
@@ -1069,7 +1590,7 @@ def render():
 
         toggle_btn = ui.element("button").classes("dpr-drawer-toggle")
         with toggle_btn:
-            toggle_icon = ui.html("☰")
+            toggle_icon = ui.html("›")  # professional arrow, closed state
 
         drawer_state = {"open": False}
 
@@ -1077,13 +1598,13 @@ def render():
             drawer_state["open"] = True
             drawer.classes(add="open")
             backdrop.classes(add="open")
-            toggle_icon.content = "✕"
+            toggle_icon.content = "‹"   # arrow rotated to close
 
         def _close_drawer():
             drawer_state["open"] = False
             drawer.classes(remove="open")
             backdrop.classes(remove="open")
-            toggle_icon.content = "☰"
+            toggle_icon.content = "›"
 
         def _toggle_drawer():
             if drawer_state["open"]:
@@ -1097,21 +1618,22 @@ def render():
 
         # ── Main content ────────────────────────────────────────────
         with ui.element("div").classes("dpr-report-main"):
-            def _open_reconcile():
-                ui.navigate.to("/reconcile")
-
-            def _open_targets():
-                _TARGETS_OPENER["fn"]()
-
-            _render_report_header(rpt, _open_reconcile, _open_targets)
+            _render_report_header(rpt)
             _download_row()
 
-            with ui.tabs().classes("w-full dpr-tabs").props("align=left") as tabs:
-                ui.tab("Summary",  icon="insights")
-                ui.tab("Overview", icon="dashboard")
-                ui.tab("Layout",   icon="grid_view")
-                ui.tab("Quality",  icon="verified")
-                ui.tab("Detailed", icon="table_view")
+            # Item 18 — Zones board button next to the tabs
+            with ui.element("div").classes("dpr-tabs-row"):
+                with ui.tabs().classes("dpr-tabs").props("align=left") as tabs:
+                    ui.tab("Summary",  icon="insights")
+                    ui.tab("Overview", icon="dashboard")
+                    ui.tab("Layout",   icon="grid_view")
+                    ui.tab("Quality",  icon="verified")
+                    ui.tab("Detailed", icon="table_view")
+                ui.button(
+                    "Zones board",
+                    on_click=lambda: ui.navigate.to("/zones"),
+                    icon="map",
+                ).classes("dpr-zones-tab")
 
             with ui.tab_panels(tabs, value="Summary").classes(
                 "w-full"
@@ -1130,6 +1652,9 @@ def render():
                     _quality_tab(rpt, q)
                 with ui.tab_panel("Detailed").style("padding: 12px 0 0 0;"):
                     _detailed_tab(rpt)
+
+            # Production panel accessible below the tabs
+            _render_production_panel(rpt)
 
 
 def _empty() -> None:
