@@ -8,14 +8,12 @@ from ui import state
 from ui.conflicts import conflict_banner, notes_banner
 
 
-# ── Section ──────────────────────────────────────────────────────────────
 def section_title(text: str, subtitle: str = "") -> None:
     ui.label(text).classes("text-2xl font-bold dpr-title mt-4")
     if subtitle:
         ui.html(escape(subtitle)).classes("dpr-section-subtitle")
 
 
-# ── Console ──────────────────────────────────────────────────────────────
 def log_console() -> ui.html:
     html = ui.html("").classes("dpr-console w-full")
     def refresh():
@@ -25,20 +23,15 @@ def log_console() -> ui.html:
     return html
 
 
-# ── Table ────────────────────────────────────────────────────────────────
-# Columns we never render inside a table cell. `provenance` is a nested
-# dict — it belongs on the Reconcile page, not in a row of data.
-_HIDDEN_COLUMNS = {"provenance"}
-
+_HIDDEN_COLUMNS = {"provenance", "sources"}
 _NUMERIC_KEYS = {
     "quantity", "skilled", "helpers", "crew_total",
     "progress_pct", "count",
 }
-
 _CONFIDENCE_COLOR = {
-    "high":   "#22c55e",
-    "medium": "#ffb020",
-    "low":    "#ff4d6a",
+    "high":   "#F2740C",   # orange (was green)
+    "medium": "#ffb020",   # amber (unchanged)
+    "low":    "#ff4d6a",   # red (unchanged)
 }
 
 
@@ -51,11 +44,11 @@ def _cell_html(key: str, value) -> str:
         color = _CONFIDENCE_COLOR.get(v, "#4f4f56")
         label = v.upper() if v else "—"
         return (
-            f'<span style="display:inline-flex;align-items:center;gap:5px;">'
-            f'<span style="width:6px;height:6px;border-radius:50%;'
+            f'<span style="display:inline-flex;align-items:center;gap:4px;">'
+            f'<span style="width:5px;height:5px;border-radius:50%;'
             f'background:{color};display:inline-block;flex:0 0 auto;"></span>'
-            f'<span style="color:{color};font-weight:600;">{escape(label)}</span>'
-            f'</span>'
+            f'<span style="color:{color};font-weight:600;font-size:10px;">'
+            f'{escape(label)}</span></span>'
         )
 
     s = str(value or "").strip()
@@ -64,9 +57,6 @@ def _cell_html(key: str, value) -> str:
 
     if key == "progress_pct":
         return f'{escape(s)}<span style="color:#85858c;">%</span>'
-
-    if key == "sources":
-        return f'<span style="color:#85858c;">{escape(s)}</span>'
 
     return escape(s)
 
@@ -85,17 +75,14 @@ def _render_table(rows: list[dict]) -> None:
 
     head = "".join(
         f'<th style="'
-        f'color:#22c55e;'
-        f'font-weight:600;'
-        f'font-size:10px;'
-        f'letter-spacing:0.06em;'
-        f'text-transform:uppercase;'
-        f'padding:6px 8px;'
+        f'color:#F2740C;font-weight:600;font-size:9.5px;'
+        f'letter-spacing:0.05em;text-transform:uppercase;'
+        f'padding:4px 6px;'
         f'text-align:{"right" if k in _NUMERIC_KEYS else "left"};'
-        f'background:#0a1f12;'
-        f'border-bottom:1px solid #22c55e;'
-        f'white-space:nowrap;'
-        f'">{escape(k.replace("_", " "))}</th>'
+        f'background:#2a1206;'
+        f'border-bottom:1px solid #F2740C;'
+        f'white-space:nowrap;">'
+        f'{escape(k.replace("_", " "))}</th>'
         for k in keys
     )
 
@@ -107,24 +94,20 @@ def _render_table(rows: list[dict]) -> None:
             align = "right" if k in _NUMERIC_KEYS else "left"
             cells += (
                 f'<td style="'
-                f'color:#e8e8ea;'
-                f'font-size:11.5px;'
-                f'line-height:1.2;'
-                f'padding:4px 8px;'
+                f'color:#e8e8ea;font-size:10.5px;line-height:1.15;'
+                f'padding:3px 6px;'
                 f'text-align:{align};'
-                f'border-bottom:1px solid rgba(34,197,94,0.06);'
-                f'vertical-align:middle;'
-                f'white-space:nowrap;'
-                f'">{_cell_html(k, r.get(k, ""))}</td>'
+                f'border-bottom:1px solid rgba(242,116,12,0.06);'
+                f'vertical-align:middle;white-space:nowrap;">'
+                f'{_cell_html(k, r.get(k, ""))}</td>'
             )
         body += f'<tr style="background:{bg};">{cells}</tr>'
 
     ui.html(
         '<div style="overflow-x:auto;background:#0a0a0a;'
-        'border:1px solid rgba(34,197,94,0.18);border-radius:8px;'
-        'margin-top:8px;">'
-        '<table style="border-collapse:collapse;background:#0a0a0a;'
-        'width:100%;">'
+        'border:1px solid rgba(242,116,12,0.18);border-radius:8px;'
+        'margin-top:6px;">'
+        '<table style="border-collapse:collapse;background:#0a0a0a;width:100%;">'
         f'<thead><tr>{head}</tr></thead>'
         f'<tbody>{body}</tbody>'
         '</table></div>'
@@ -136,11 +119,9 @@ def _bullets(items: list) -> None:
         if isinstance(it, dict):
             text = " · ".join(f"{k}: {v}" for k, v in it.items()
                               if v and k != "sources")
-            srcs = it.get("sources") or []
-            suffix = f"  [{', '.join(srcs)}]" if srcs else ""
-            ui.label(f"• {text}{suffix}").classes("text-white")
+            ui.label(f"• {text}").classes("text-white").style("font-size:12px;")
         else:
-            ui.label(f"• {it}").classes("text-white")
+            ui.label(f"• {it}").classes("text-white").style("font-size:12px;")
 
 
 def report_preview() -> None:
@@ -152,18 +133,6 @@ def report_preview() -> None:
     conflict_banner(rpt.conflicts)
     notes_banner(rpt.notes)
 
-    def kv(label, value):
-        if value:
-            ui.label(label).classes("dpr-title")
-            ui.label(str(value)).classes("text-white")
-
-    kv("Project", rpt.project_name)
-    kv("Date", rpt.report_date)
-    kv("Location", rpt.site_location)
-    kv("Prepared By", rpt.prepared_by)
-    kv("Weather", rpt.weather)
-    kv("Shift", rpt.shift)
-
     for title, rows in [
         ("Work Progress", rpt.work_progress),
         ("Equipment",     rpt.equipment),
@@ -171,7 +140,7 @@ def report_preview() -> None:
         ("Personnel",     rpt.personnel),
     ]:
         if rows:
-            ui.label(title).classes("dpr-title")
+            ui.label(title).classes("dpr-title").style("margin-top:14px;")
             _render_table(rows)
 
     for title, items in [
@@ -181,22 +150,13 @@ def report_preview() -> None:
         ("Next Day Plan",    rpt.next_day_plan),
     ]:
         if items:
-            ui.label(title).classes("dpr-title")
+            ui.label(title).classes("dpr-title").style("margin-top:14px;")
             _bullets(items)
 
     if rpt.incidents:
-        ui.label("Incidents").classes("dpr-title")
-        ui.label(rpt.incidents).classes("text-white")
+        ui.label("Incidents").classes("dpr-title").style("margin-top:14px;")
+        ui.label(rpt.incidents).classes("text-white").style("font-size:12px;")
 
-    if rpt.source_files:
-        ui.label("Source Files").classes("dpr-title")
-        for f in rpt.source_files:
-            ui.label(f"• {f}").classes("text-white")
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Analytics widgets
-# ═══════════════════════════════════════════════════════════════════════════
 
 def metadata_strip(items: list[tuple[str, str]]) -> None:
     cells = "".join(
@@ -318,7 +278,7 @@ def ratio_bars(items: list[tuple[str, float, float, float]]) -> None:
         '  <span><span class="dpr-ratio-dot" '
         '     style="background:var(--dpr-primary)"></span>Skilled</span>'
         '  <span><span class="dpr-ratio-dot" '
-        '     style="background:rgba(34,197,94,0.28)"></span>Helpers</span>'
+        '     style="background:rgba(242,116,12,0.28)"></span>Helpers</span>'
         '</div>'
     )
     ui.html(rows + legend).classes("w-full")
@@ -351,14 +311,14 @@ def matrix_view(data: dict) -> None:
     if not acts or not bldgs:
         return
     grid_style = (
-        f"grid-template-columns: 120px repeat({len(acts)}, minmax(56px, 1fr));"
+        f"grid-template-columns: 110px repeat({len(acts)}, minmax(48px, 1fr));"
     )
     html = f'<div class="dpr-matrix" style="{grid_style}">'
     html += '<div class="dpr-matrix-head"></div>'
     for a in acts:
         html += f'<div class="dpr-matrix-head">{escape(a)}</div>'
     for b in bldgs:
-        html += f'<div class="dpr-matrix-row-head">Building {escape(b)}</div>'
+        html += f'<div class="dpr-matrix-row-head">Bldg {escape(b)}</div>'
         for a in acts:
             v = mat.get(b, {}).get(a, 0)
             if v == 0:
@@ -368,7 +328,7 @@ def matrix_view(data: dict) -> None:
             else:
                 intensity = min(0.10 + (v / mx) * 0.55, 0.75)
                 html += (f'<div class="dpr-matrix-cell" '
-                         f'style="background:rgba(34,197,94,{intensity:.2f});">'
+                         f'style="background:rgba(242,116,12,{intensity:.2f});">'
                          f'{v}</div>')
     html += "</div>"
     ui.html(html).classes("w-full")
@@ -389,22 +349,14 @@ def top_list(items: list[tuple[str, str | int]], *, start: int = 1) -> None:
     ui.html(f'<div class="dpr-toplist">{rows}</div>').classes("w-full")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Pass 11 — Line chart (SVG) + Risk forecast card
-# ═══════════════════════════════════════════════════════════════════════════
-
 def line_chart(
     title: str,
     series: list[dict],
     *,
     subtitle: str = "",
     x_labels: list[str] | None = None,
-    height: int = 260,
+    height: int = 220,
 ) -> None:
-    """
-    series: [{"name": str, "color": str, "points": [float|None, ...]}, ...]
-    All series must be the same length. x_labels optional.
-    """
     if not series or not series[0].get("points"):
         ui.html('<div class="dpr-panel-empty">No data to chart.</div>')
         return
@@ -417,49 +369,44 @@ def line_chart(
 
     y_max = max(all_vals) or 1
     W, H = 900, height
-    pad_l, pad_r, pad_t, pad_b = 56, 24, 20, 44
+    pad_l, pad_r, pad_t, pad_b = 52, 20, 18, 40
     inner_w = W - pad_l - pad_r
     inner_h = H - pad_t - pad_b
 
     def x_coord(i: int) -> float:
-        if n == 1:
-            return pad_l + inner_w / 2
-        return pad_l + (i / (n - 1)) * inner_w
+        return pad_l + ((i / (n - 1)) * inner_w if n > 1 else inner_w / 2)
 
     def y_coord(v: float) -> float:
         return pad_t + inner_h - (v / y_max) * inner_h
 
-    # Grid + Y axis labels
     grid = ""
     for i in range(5):
         y = pad_t + (i / 4) * inner_h
         val = y_max * (1 - i / 4)
         grid += (
             f'<line x1="{pad_l}" y1="{y:.1f}" x2="{pad_l + inner_w}" y2="{y:.1f}" '
-            f'stroke="rgba(34,197,94,0.10)" stroke-width="1"/>'
+            f'stroke="rgba(242,116,12,0.10)" stroke-width="1"/>'
             f'<text x="{pad_l - 8}" y="{y + 3:.1f}" text-anchor="end" '
-            f'fill="#85858c" font-size="10" font-family="monospace">'
+            f'fill="#85858c" font-size="9.5" font-family="monospace">'
             f'{int(val) if val == int(val) else f"{val:.1f}"}</text>'
         )
 
-    # X axis labels
     x_axis = ""
     if x_labels:
         step = max(1, len(x_labels) // 10)
         for i in range(0, len(x_labels), step):
             x = x_coord(i)
             x_axis += (
-                f'<text x="{x:.1f}" y="{pad_t + inner_h + 18}" '
-                f'text-anchor="middle" fill="#85858c" font-size="10" '
+                f'<text x="{x:.1f}" y="{pad_t + inner_h + 16}" '
+                f'text-anchor="middle" fill="#85858c" font-size="9.5" '
                 f'font-family="monospace">{escape(str(x_labels[i]))}</text>'
             )
 
-    # Series
     paths = ""
     legend = ""
     for s in series:
         pts = s.get("points", [])
-        color = s.get("color", "#22c55e")
+        color = s.get("color", "#F2740C")
         d_cmd = ""
         for i, v in enumerate(pts):
             if v is None:
@@ -469,19 +416,18 @@ def line_chart(
         if d_cmd:
             paths += (
                 f'<path d="{d_cmd}" fill="none" stroke="{color}" '
-                f'stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+                f'stroke-width="1.8" stroke-linejoin="round" '
+                f'stroke-linecap="round"/>'
             )
         for i, v in enumerate(pts):
             if v is None:
                 continue
             x, y = x_coord(i), y_coord(v)
-            paths += (
-                f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.8" fill="{color}"/>'
-            )
+            paths += f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.4" fill="{color}"/>'
         legend += (
             f'<span style="display:inline-flex;align-items:center;gap:6px;'
-            f'color:#85858c;font-size:11px;margin-right:14px;">'
-            f'<span style="width:14px;height:2px;background:{color};'
+            f'color:#85858c;font-size:10.5px;margin-right:12px;">'
+            f'<span style="width:12px;height:2px;background:{color};'
             f'display:inline-block;"></span>{escape(s.get("name",""))}</span>'
         )
 
@@ -496,7 +442,7 @@ def line_chart(
         f'    <div class="dpr-panel-title">{escape(title)}</div>'
         f'  </div>'
         f'  {sub_html}'
-        f'  <div style="margin-bottom:10px;">{legend}</div>'
+        f'  <div style="margin-bottom:8px;">{legend}</div>'
         f'  <svg viewBox="0 0 {W} {H}" preserveAspectRatio="xMidYMid meet" '
         f'       style="width:100%;height:{H}px;display:block;">'
         f'    {grid}{x_axis}{paths}'
@@ -505,11 +451,10 @@ def line_chart(
     ).classes("w-full")
 
 
-_SEV_COLOR = {"high": "#ff4d6a", "medium": "#ffb020", "low": "#22c55e"}
+_SEV_COLOR = {"high": "#ff4d6a", "medium": "#ffb020", "low": "#F2740C"}
 
 
 def risk_forecast(data: dict) -> None:
-    """Render the AI risk forecast card."""
     if not data:
         ui.html('<div class="dpr-panel-empty">No risk analysis yet.</div>')
         return
@@ -519,7 +464,7 @@ def risk_forecast(data: dict) -> None:
     risks = data.get("risks", [])
     bottlenecks = data.get("bottlenecks", [])
 
-    overall_color = _SEV_COLOR.get(overall, "#4f4f56")
+    overall_color = _SEV_COLOR.get(overall, "#85858c")
     if overall == "insufficient_data":
         overall_color = "#85858c"
 
@@ -535,9 +480,11 @@ def risk_forecast(data: dict) -> None:
     summary_html = ""
     if summary:
         summary_html = (
-            f'<div style="color:#e8e8ea;font-size:12.5px;line-height:1.55;'
-            f'margin:6px 0 16px 0;padding:10px 12px;background:rgba(34,197,94,0.04);'
-            f'border-left:2px solid {overall_color};border-radius:0 6px 6px 0;">'
+            f'<div style="color:#e8e8ea;font-size:12px;line-height:1.5;'
+            f'margin:4px 0 12px 0;padding:8px 11px;'
+            f'background:rgba(242,116,12,0.04);'
+            f'border-left:2px solid {overall_color};'
+            f'border-radius:0 6px 6px 0;">'
             f'{escape(summary)}</div>'
         )
 
@@ -551,32 +498,32 @@ def risk_forecast(data: dict) -> None:
         evidence = escape(r.get("evidence", ""))
         reco = escape(r.get("recommendation", ""))
         risks_html += (
-            f'<div style="border:1px solid rgba(34,197,94,0.12);'
+            f'<div style="border:1px solid rgba(242,116,12,0.12);'
             f'border-left:3px solid {color};'
-            f'border-radius:8px;padding:12px 14px;margin-bottom:10px;'
+            f'border-radius:8px;padding:10px 12px;margin-bottom:8px;'
             f'background:rgba(255,255,255,0.015);">'
-            f'  <div style="display:flex;align-items:center;gap:10px;'
-            f'      margin-bottom:6px;flex-wrap:wrap;">'
+            f'  <div style="display:flex;align-items:center;gap:8px;'
+            f'      margin-bottom:5px;flex-wrap:wrap;">'
             f'    <span style="background:{color}22;color:{color};'
-            f'        border:1px solid {color};padding:1px 7px;'
-            f'        border-radius:999px;font-size:9.5px;font-weight:700;'
+            f'        border:1px solid {color};padding:1px 6px;'
+            f'        border-radius:999px;font-size:9px;font-weight:700;'
             f'        letter-spacing:0.08em;">{cat}</span>'
-            f'    <span style="color:#e8e8ea;font-size:13px;font-weight:600;">'
+            f'    <span style="color:#e8e8ea;font-size:12.5px;font-weight:600;">'
             f'      {title}</span>'
-            f'    <span style="color:#4f4f56;font-size:10px;'
+            f'    <span style="color:#4f4f56;font-size:9.5px;'
             f'        margin-left:auto;font-weight:600;text-transform:uppercase;'
             f'        letter-spacing:0.08em;">{escape(sev)}</span>'
             f'  </div>'
-            f'  <div style="color:#c8c8cc;font-size:11.5px;line-height:1.55;'
-            f'      margin-bottom:8px;">{detail}</div>'
-            + (f'<div style="color:#85858c;font-size:11px;line-height:1.5;'
-               f'      margin-bottom:6px;">'
+            f'  <div style="color:#c8c8cc;font-size:11px;line-height:1.5;'
+            f'      margin-bottom:6px;">{detail}</div>'
+            + (f'<div style="color:#85858c;font-size:10.5px;line-height:1.45;'
+               f'      margin-bottom:5px;">'
                f'<strong style="color:#4f4f56;">Evidence:</strong> {evidence}</div>'
                if evidence else "")
-            + (f'<div style="color:#a8e5c0;font-size:11.5px;line-height:1.5;'
-               f'      padding:8px 10px;background:rgba(34,197,94,0.06);'
+            + (f'<div style="color:#e8c19a;font-size:11px;line-height:1.45;'
+               f'      padding:6px 9px;background:rgba(242,116,12,0.06);'
                f'      border-radius:6px;">'
-               f'<strong style="color:#22c55e;">→</strong> {reco}</div>'
+               f'<strong style="color:#F2740C;">→</strong> {reco}</div>'
                if reco else "")
             + '</div>'
         )
@@ -596,9 +543,9 @@ def risk_forecast(data: dict) -> None:
                 f'</div>'
             )
         bottleneck_html = (
-            f'<div style="margin-top:16px;">'
-            f'  <div style="color:#85858c;font-size:10.5px;letter-spacing:0.12em;'
-            f'      text-transform:uppercase;font-weight:600;margin-bottom:8px;">'
+            f'<div style="margin-top:12px;">'
+            f'  <div style="color:#85858c;font-size:10px;letter-spacing:0.12em;'
+            f'      text-transform:uppercase;font-weight:600;margin-bottom:6px;">'
             f'    Bottleneck Zones</div>'
             f'  <div class="dpr-toplist">{items}</div>'
             f'</div>'
