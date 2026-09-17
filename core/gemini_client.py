@@ -1,8 +1,6 @@
 """Gemini client — direct REST via httpx. No SDK, no gRPC, hard timeouts.
 
-The google-generativeai SDK uses gRPC under the hood and its timeout
-options are frequently ignored, causing multi-hour hangs. This module
-calls the REST endpoint directly with httpx, where timeouts actually work.
+Deterministic: temperature=0, topP=1, topK=1, seed=42 on every call.
 """
 from __future__ import annotations
 
@@ -19,31 +17,43 @@ from core.errors import GeminiError
 log = logging.getLogger("dpr.gemini")
 
 _API_BASE = "https://generativelanguage.googleapis.com/v1beta"
-
-# Hard timeout: connect=10s, read=90s, write=10s
 _TIMEOUT = httpx.Timeout(connect=10.0, read=90.0, write=10.0, pool=10.0)
 
 
 class _ModelNotFound(Exception):
-    """Raised when a specific model ID returns 404 — try next, don't retry this one."""
+    """Raised when a specific model ID returns 404 — try next, don't retry."""
 
 
 def _models_chain() -> list[str]:
     return [settings.GEMINI_MODEL, *settings.GEMINI_FALLBACK_MODELS]
 
 
+def _gen_config(json_mode: bool) -> dict:
+    """Deterministic generation config. Do NOT increase temperature."""
+    cfg: dict = {
+        "temperature": 0.0,   # no creativity — extraction only
+        "topP": 1.0,
+        "topK": 1,
+        "seed": 42,           # reproducible sampling
+    }
+    if json_mode:
+        cfg["response_mime_type"] = "application/json"
+    return cfg
+
+
 def _call(model: str, parts: list[dict], json_mode: bool) -> str:
     url = f"{_API_BASE}/models/{model}:generateContent"
-    body: dict = {"contents": [{"role": "user", "parts": parts}]}
-    if json_mode:
-        body["generationConfig"] = {"response_mime_type": "application/json"}
-
+    body: dict = {
+        "contents": [{"role": "user", "parts": parts}],
+        "generationConfig": _gen_config(json_mode),
+    }
     headers = {
         "Content-Type": "application/json",
         "x-goog-api-key": settings.GEMINI_API_KEY,
     }
 
-    print(f"[gemini] POST {model} (json={json_mode}) …", flush=True)
+    print(f"[gemini] POST {model} (json={json_mode}, temp=0, seed=42) …",
+          flush=True)
     t0 = time.time()
     try:
         with httpx.Client(timeout=_TIMEOUT) as client:
@@ -55,7 +65,8 @@ def _call(model: str, parts: list[dict], json_mode: bool) -> str:
         print(f"[gemini] NETWORK ERROR on {model}: {e}", flush=True)
         raise GeminiError(f"Network error calling {model}: {e}") from e
 
-    print(f"[gemini] ← {model} status={r.status_code} in {time.time()-t0:.1f}s", flush=True)
+    print(f"[gemini] ← {model} status={r.status_code} in {time.time()-t0:.1f}s",
+          flush=True)
 
     if r.status_code == 404:
         raise _ModelNotFound(f"Model '{model}' returned 404")
@@ -66,7 +77,8 @@ def _call(model: str, parts: list[dict], json_mode: bool) -> str:
             msg = err.get("message", r.text[:300])
         except Exception:
             msg = r.text[:300]
-        print(f"[gemini] ERROR {r.status_code} on {model}: {msg[:200]}", flush=True)
+        print(f"[gemini] ERROR {r.status_code} on {model}: {msg[:200]}",
+              flush=True)
         raise GeminiError(f"HTTP {r.status_code} on {model}: {msg}")
 
     try:
