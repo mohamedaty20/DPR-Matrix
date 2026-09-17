@@ -1,11 +1,10 @@
-"""PDF export — compact landscape tables, page header/footer, page numbers.
+"""PDF export — compact landscape tables + logo header.
 
-Layout notes (why landscape):
-  Work Progress has ~12 columns. In A4 portrait each column gets ~1.2 cm
-  and every cell wraps to 6-8 lines, turning one row into one page. A4
-  landscape gives 25.7 cm of usable width and every cell fits on one line.
+Logo is drawn from report.project_meta['logo_b64'] (base64-encoded image).
+Company / contractor / consultant rows are added to the meta grid when set.
 """
 from __future__ import annotations
+import base64
 import io
 from datetime import datetime
 from xml.sax.saxutils import escape
@@ -15,9 +14,9 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    KeepTogether,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, KeepTogether,
 )
 
 from core.models import AggregatedReport
@@ -31,15 +30,10 @@ GREEN = colors.HexColor(EXPORT_THEME["title"])
 BLACK = colors.HexColor(EXPORT_THEME["body"])
 GREY  = colors.HexColor("#888888")
 LIGHT = colors.HexColor("#EEEEEE")
-PAGE  = landscape(A4)              # 29.7 cm × 21 cm
+PAGE  = landscape(A4)
 
-# Columns we never print. Same rule as the on-screen tables in
-# ui/components.py — `sources` is file bookkeeping, `provenance` is a
-# nested dict.
 _HIDDEN_COLUMNS = {"sources", "provenance"}
 
-# Column width hints per table type (in cm, in the order the keys appear).
-# Anything not listed falls back to a proportional split.
 _WIDTHS: dict[str, dict[str, float]] = {
     "work_progress": {
         "building": 1.4, "floor": 0.9, "zone": 1.4,
@@ -99,7 +93,6 @@ def _styles():
             textColor=BLACK, fontName="Helvetica", fontSize=9, leading=11.5,
             leftIndent=10, bulletIndent=2,
         ),
-        # Table cells — tight
         "cell": ParagraphStyle(
             "DprCell", parent=base["BodyText"],
             textColor=BLACK, fontName="Helvetica",
@@ -109,6 +102,16 @@ def _styles():
             "DprCellHead", parent=base["BodyText"],
             textColor=GREEN, fontName="Helvetica-Bold",
             fontSize=7.5, leading=9,
+        ),
+        "meta_label": ParagraphStyle(
+            "DprMetaLabel", parent=base["BodyText"],
+            textColor=BLACK, fontName="Helvetica-Bold",
+            fontSize=8.5, leading=11,
+        ),
+        "meta_value": ParagraphStyle(
+            "DprMetaValue", parent=base["BodyText"],
+            textColor=BLACK, fontName="Helvetica",
+            fontSize=8.5, leading=11,
         ),
     }
 
@@ -122,12 +125,9 @@ def _column_widths(table_kind: str, keys: list[str], avail_w: float) -> list[flo
         widths = [hints.get(k) for k in keys]
         if all(w is not None for w in widths):
             total = sum(widths)
-            # Scale to fill available width
             if total > 0:
                 scale = avail_w / (total * cm)
                 return [w * cm * scale for w in widths]
-
-    # Fallback: proportional split
     n = len(keys)
     return [avail_w / n] * n
 
@@ -139,7 +139,6 @@ def _build_table(items: list, styles, *, table_kind: str = "") -> Table | None:
     if not items:
         return None
 
-    # ----- List of dicts → 2D grid with header -----
     if isinstance(items[0], dict):
         keys: list[str] = []
         for it in items:
@@ -165,14 +164,13 @@ def _build_table(items: list, styles, *, table_kind: str = "") -> Table | None:
                 row_cells.append(Paragraph(_e(v), styles["cell"]))
             rows.append(row_cells)
 
-    # ----- List of scalars → single-column table -----
     else:
         rows = [[Paragraph("Item", styles["cell_head"])]]
         for it in items:
             rows.append([Paragraph(_e(it), styles["cell"])])
         keys = ["item"]
 
-    avail_w = PAGE[0] - 4 * cm          # 25.7 cm on landscape A4
+    avail_w = PAGE[0] - 4 * cm
     col_w = _column_widths(table_kind, keys, avail_w)
 
     t = Table(rows, colWidths=col_w, repeatRows=1)
@@ -192,28 +190,59 @@ def _build_table(items: list, styles, *, table_kind: str = "") -> Table | None:
 # ---------------------------------------------------------------------------
 # Page header / footer
 # ---------------------------------------------------------------------------
-def _on_page(canvas, doc, project_name: str):
-    canvas.saveState()
-    w, h = PAGE
-    # Header rule
-    canvas.setStrokeColor(GREEN)
-    canvas.setLineWidth(0.5)
-    canvas.line(2 * cm, h - 1.3 * cm, w - 2 * cm, h - 1.3 * cm)
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(GREY)
-    canvas.drawString(2 * cm, h - 1.05 * cm,
-                      f"DPR — {project_name or 'Untitled'}")
-    canvas.drawRightString(w - 2 * cm, h - 1.05 * cm,
-                           datetime.utcnow().strftime("%Y-%m-%d"))
-    # Footer rule
-    canvas.setStrokeColor(GREEN)
-    canvas.line(2 * cm, 1.3 * cm, w - 2 * cm, 1.3 * cm)
-    canvas.drawString(
-        2 * cm, 0.85 * cm,
-        f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
-    )
-    canvas.drawRightString(w - 2 * cm, 0.85 * cm, f"Page {doc.page}")
-    canvas.restoreState()
+def _make_page_handler(project_name: str, logo_reader: ImageReader | None):
+    def _on_page(canvas, doc):
+        canvas.saveState()
+        w, h = PAGE
+
+        # Top rule
+        canvas.setStrokeColor(GREEN)
+        canvas.setLineWidth(0.5)
+        canvas.line(2 * cm, h - 1.3 * cm, w - 2 * cm, h - 1.3 * cm)
+
+        # Left: project name
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(GREY)
+        canvas.drawString(2 * cm, h - 1.05 * cm,
+                          f"DPR — {project_name or 'Untitled'}")
+
+        # Right: logo (if any)
+        if logo_reader is not None:
+            try:
+                canvas.drawImage(
+                    logo_reader,
+                    w - 2 * cm - 1.6 * cm, h - 1.15 * cm,
+                    width=1.6 * cm, height=0.85 * cm,
+                    preserveAspectRatio=True, mask='auto',
+                )
+            except Exception:
+                pass
+
+        # Bottom rule + footer
+        canvas.setStrokeColor(GREEN)
+        canvas.line(2 * cm, 1.3 * cm, w - 2 * cm, 1.3 * cm)
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(GREY)
+        canvas.drawString(
+            2 * cm, 0.85 * cm,
+            f"Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}",
+        )
+        canvas.drawRightString(w - 2 * cm, 0.85 * cm, f"Page {doc.page}")
+        canvas.restoreState()
+
+    return _on_page
+
+
+def _decode_logo(report: AggregatedReport) -> ImageReader | None:
+    pm = report.project_meta or {}
+    b64 = pm.get("logo_b64")
+    if not b64:
+        return None
+    try:
+        raw = base64.b64decode(b64)
+        return ImageReader(io.BytesIO(raw))
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -230,28 +259,47 @@ def export_pdf(report: AggregatedReport) -> bytes:
     )
     S = _styles()
     story = []
+    pm = report.project_meta or {}
 
     # ---- Title block ----
     story.append(Paragraph("Daily Progress Report", S["title"]))
-    if report.project_name:
-        story.append(Paragraph(_e(report.project_name), S["subtitle"]))
+    display_name = (
+        pm.get("project_name") or report.project_name or ""
+    )
+    if display_name:
+        story.append(Paragraph(_e(display_name), S["subtitle"]))
 
-    # ---- Meta grid (compact, 2 columns × 2 rows) ----
-    meta = [
-        [
-            Paragraph("<b>Date</b>", S["cell"]),
-            Paragraph(_e(report.report_date or "—"), S["cell"]),
-            Paragraph("<b>Prepared By</b>", S["cell"]),
-            Paragraph(_e(report.prepared_by or "—"), S["cell"]),
-        ],
-        [
-            Paragraph("<b>Location</b>", S["cell"]),
-            Paragraph(_e(report.site_location or "—"), S["cell"]),
-            Paragraph("<b>Weather</b>", S["cell"]),
-            Paragraph(_e(report.weather or "—"), S["cell"]),
-        ],
+    # ---- Meta grid ----
+    def _lbl(text):
+        return Paragraph(_e(text), S["meta_label"])
+    def _val(text):
+        return Paragraph(_e(text if text else "—"), S["meta_value"])
+
+    meta_rows = [
+        [_lbl("Date"), _val(report.report_date),
+         _lbl("Prepared By"), _val(report.prepared_by)],
+        [_lbl("Location"),
+         _val(pm.get("location") or report.site_location),
+         _lbl("Weather"), _val(pm.get("weather") or report.weather)],
     ]
-    meta_t = Table(meta, colWidths=[2.0 * cm, 10.0 * cm, 2.5 * cm, 11.2 * cm])
+    company = pm.get("company_name") or ""
+    contractor = pm.get("contractor") or ""
+    consultant = pm.get("consultant") or ""
+    if company or contractor:
+        meta_rows.append([
+            _lbl("Company"), _val(company),
+            _lbl("Contractor / Sub"), _val(contractor),
+        ])
+    if consultant:
+        meta_rows.append([
+            _lbl("Consultant"), _val(consultant),
+            _lbl(""), _val(""),
+        ])
+
+    meta_t = Table(
+        meta_rows,
+        colWidths=[2.0 * cm, 10.0 * cm, 2.8 * cm, 10.9 * cm],
+    )
     meta_t.setStyle(TableStyle([
         ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING",  (0, 0), (-1, -1), 2),
@@ -283,7 +331,6 @@ def export_pdf(report: AggregatedReport) -> bytes:
         story.append(tbl)
         story.append(Spacer(1, 4))
 
-    # Order that engineers expect: work first, admin last
     table_section("Work Progress", report.work_progress, kind="work_progress")
     table_section("Personnel",     report.personnel,     kind="personnel")
     table_section("Equipment",     report.equipment,     kind="equipment")
@@ -301,12 +348,12 @@ def export_pdf(report: AggregatedReport) -> bytes:
     bullet_section("Issues & Risks", report.issues_risks)
     bullet_section("Next Day Plan", report.next_day_plan)
 
-    # NOTE: source file list is intentionally omitted from the PDF — file
-    # names are bookkeeping, not engineering content. Users said they do
-    # not want to see upload names in any exported table.
-
     # ---- Build ----
-    on_page = lambda c, d: _on_page(c, d, report.project_name)
+    logo_reader = _decode_logo(report)
+    on_page = _make_page_handler(
+        pm.get("project_name") or report.project_name or "",
+        logo_reader,
+    )
     doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
     return buf.getvalue()
 
