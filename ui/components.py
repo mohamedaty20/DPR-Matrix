@@ -1,4 +1,13 @@
-"""Reusable widgets — sections, tables, bars, histograms, matrices."""
+"""Reusable widgets — sections, tables, bars, histograms, matrices.
+
+Pass 2 changes:
+  - matrix_view (item 23): each column header shows the activity name
+    with "working floors" on a second line beneath it; row heads show
+    "B{building}" instead of "Bldg {building}".
+  - ratio_bars legend: "Helpers" → "Assistants" (item 20).
+  - new crew_rectangles component for the redesigned Crew Composition
+    panel (item 22).
+"""
 from __future__ import annotations
 from html import escape
 
@@ -29,9 +38,9 @@ _NUMERIC_KEYS = {
     "progress_pct", "count",
 }
 _CONFIDENCE_COLOR = {
-    "high":   "#F2740C",   # orange (was green)
-    "medium": "#ffb020",   # amber (unchanged)
-    "low":    "#ff4d6a",   # red (unchanged)
+    "high":   "#F2740C",   # orange
+    "medium": "#ffb020",   # amber
+    "low":    "#ff4d6a",   # red
 }
 
 
@@ -256,6 +265,9 @@ def bar_list(items: list[tuple[str, float | int]],
 
 
 def ratio_bars(items: list[tuple[str, float, float, float]]) -> None:
+    """Skilled vs assistants ratio bars. `helpers` percentage is the second
+    tuple value — kept for data-shape compatibility, relabeled to assistants
+    on the surface (item 20)."""
     if not items:
         return
     rows = ""
@@ -278,7 +290,7 @@ def ratio_bars(items: list[tuple[str, float, float, float]]) -> None:
         '  <span><span class="dpr-ratio-dot" '
         '     style="background:var(--dpr-primary)"></span>Skilled</span>'
         '  <span><span class="dpr-ratio-dot" '
-        '     style="background:rgba(242,116,12,0.28)"></span>Helpers</span>'
+        '     style="background:rgba(242,116,12,0.28)"></span>Assistants</span>'
         '</div>'
     )
     ui.html(rows + legend).classes("w-full")
@@ -304,21 +316,37 @@ def histogram(buckets: list[tuple[str, int]]) -> None:
 
 
 def matrix_view(data: dict) -> None:
+    """Building × Activity matrix (item 23).
+
+    Each column header shows the activity name on line 1 and the fixed
+    phrase "working floors" on line 2 (smaller, dimmer). Row heads are
+    "B{n}" instead of "Bldg {n}".
+    """
     acts = data["activities"]
     bldgs = data["buildings"]
     mat = data["matrix"]
     mx = data["max"] or 1
     if not acts or not bldgs:
         return
+
     grid_style = (
-        f"grid-template-columns: 110px repeat({len(acts)}, minmax(48px, 1fr));"
+        f"grid-template-columns: 40px repeat({len(acts)}, minmax(64px, 1fr));"
     )
     html = f'<div class="dpr-matrix" style="{grid_style}">'
+
+    # Empty corner cell + activity headers
     html += '<div class="dpr-matrix-head"></div>'
     for a in acts:
-        html += f'<div class="dpr-matrix-head">{escape(a)}</div>'
+        html += (
+            f'<div class="dpr-matrix-head dpr-matrix-head-2line">'
+            f'  <span class="dpr-matrix-head-name">{escape(a)}</span>'
+            f'  <span class="dpr-matrix-head-sub">working floors</span>'
+            f'</div>'
+        )
+
+    # Rows
     for b in bldgs:
-        html += f'<div class="dpr-matrix-row-head">Bldg {escape(b)}</div>'
+        html += f'<div class="dpr-matrix-row-head">B{escape(b)}</div>'
         for a in acts:
             v = mat.get(b, {}).get(a, 0)
             if v == 0:
@@ -332,6 +360,91 @@ def matrix_view(data: dict) -> None:
                          f'{v}</div>')
     html += "</div>"
     ui.html(html).classes("w-full")
+
+
+def crew_rectangles(buildings: list[dict],
+                    *, on_click=None, limit: int = 20) -> None:
+    """Crew Composition — top N buildings by assistant count (item 22).
+
+    Each building becomes its own small card showing building number,
+    skilled crew, assistant crew, and total. If on_click is provided, each
+    card becomes clickable and calls on_click(building_dict).
+
+    `buildings` is SUM.compute(rpt)["buildings"] — sorted by crew desc; we
+    re-sort by assistant count for this panel.
+    """
+    top = sorted(
+        [b for b in buildings if b.get("assistants", 0) > 0],
+        key=lambda x: (-x.get("assistants", 0), x.get("building", "")),
+    )[:limit]
+
+    if not top:
+        ui.html('<div class="dpr-panel-empty">'
+                'No assistant headcounts found.</div>')
+        return
+
+    cards = ""
+    for b in top:
+        bldg = escape(str(b.get("building", "—")))
+        sk = int(b.get("skilled", 0) or 0)
+        hp = int(b.get("assistants", 0) or 0)
+        crew = int(b.get("crew", 0) or 0)
+        cards += (
+            f'<div class="dpr-crew-card" data-bldg="{bldg}">'
+            f'  <div class="dpr-crew-card-title">Building {bldg}</div>'
+            f'  <div class="dpr-crew-card-row">'
+            f'    <span class="dpr-crew-card-key">Crew</span>'
+            f'    <span class="dpr-crew-card-val">{sk}</span>'
+            f'  </div>'
+            f'  <div class="dpr-crew-card-row">'
+            f'    <span class="dpr-crew-card-key">Assistant</span>'
+            f'    <span class="dpr-crew-card-val">{hp}</span>'
+            f'  </div>'
+            f'  <div class="dpr-crew-card-row dpr-crew-card-total">'
+            f'    <span class="dpr-crew-card-key">Total</span>'
+            f'    <span class="dpr-crew-card-val">{crew}</span>'
+            f'  </div>'
+            f'</div>'
+        )
+
+    container = ui.html(f'<div class="dpr-crew-grid">{cards}</div>') \
+        .classes("w-full")
+
+    if on_click is not None:
+        # Attach a JS-side click handler that emits an event to Python with
+        # the building id. Uses the NiceGUI event system on the container.
+        container.on("click", _make_crew_click_handler(on_click, top))
+
+
+def _make_crew_click_handler(on_click, buildings):
+    """Return a Python handler that reads the clicked card's data-bldg."""
+    by_name = {str(b.get("building", "—")): b for b in buildings}
+
+    def handler(e):
+        # NiceGUI passes the raw DOM event; we read the closest card.
+        try:
+            target = (e.args or {}).get("target", {}) if isinstance(e.args, dict) else {}
+        except Exception:
+            target = {}
+        # The simplest robust path — walk from the event path if provided.
+        bldg = None
+        try:
+            path = e.args.get("path") if isinstance(e.args, dict) else None
+            if path:
+                for el in path:
+                    ds = (el.get("dataset") or {}) if isinstance(el, dict) else {}
+                    if "bldg" in ds:
+                        bldg = ds["bldg"]
+                        break
+        except Exception:
+            pass
+        if bldg is None:
+            return
+        b = by_name.get(str(bldg))
+        if b:
+            on_click(b)
+
+    return handler
 
 
 def top_list(items: list[tuple[str, str | int]], *, start: int = 1) -> None:
@@ -455,6 +568,9 @@ _SEV_COLOR = {"high": "#ff4d6a", "medium": "#ffb020", "low": "#F2740C"}
 
 
 def risk_forecast(data: dict) -> None:
+    """Kept for compatibility — no longer called from the results page
+    (item 14 removed the AI Risk menu). The function stays here so other
+    callers don't break."""
     if not data:
         ui.html('<div class="dpr-panel-empty">No risk analysis yet.</div>')
         return
