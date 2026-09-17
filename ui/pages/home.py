@@ -40,6 +40,12 @@ _HOME_CSS = """
   text-align: center;
 }
 
+.dpr-loading-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
 /* ── Custom drop zone — no borders, centered text + plus ───────── */
 .dpr-drop-wrap {
   width: 100%;
@@ -63,12 +69,8 @@ _HOME_CSS = """
   transition: background-color .18s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.dpr-drop-visual:hover {
-  background: rgba(242, 116, 12, 0.035);
-}
-.dpr-drop-visual:active {
-  background: rgba(242, 116, 12, 0.06);
-}
+.dpr-drop-visual:hover { background: rgba(242, 116, 12, 0.035); }
+.dpr-drop-visual:active { background: rgba(242, 116, 12, 0.06); }
 
 .dpr-drop-text {
   color: #e8e8ea;
@@ -97,8 +99,7 @@ _HOME_CSS = """
   text-shadow: 0 0 26px rgba(242, 116, 12, 0.42);
 }
 
-/* The real Quasar uploader is present in the DOM but off-screen.
-   We drive it via uploader.run_method('pickFiles'). */
+/* The real Quasar uploader stays off-screen; we drive it via pickFiles() */
 .dpr-drop-input {
   position: fixed !important;
   top: -10000px !important;
@@ -110,7 +111,6 @@ _HOME_CSS = """
   overflow: hidden !important;
 }
 
-/* ── Hint line under the drop zone ─────────────────────────────── */
 .dpr-home-hint {
   color: #4f4f56;
   font-size: 11.5px;
@@ -122,33 +122,22 @@ _HOME_CSS = """
 
 /* ── Queue list ────────────────────────────────────────────────── */
 .dpr-q-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-  width: 100%;
-  max-width: 640px;
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 6px; width: 100%; max-width: 640px;
 }
 .dpr-q-row {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
-  align-items: center;
-  gap: 12px;
+  align-items: center; gap: 12px;
   padding: 9px 14px;
   background: #0c0c0f;
   border: 1px solid rgba(242, 116, 12, 0.14);
-  border-radius: 8px;
-  font-size: 12px;
-  min-height: 40px;
+  border-radius: 8px; font-size: 12px; min-height: 40px;
   text-align: left;
 }
 .dpr-q-name {
-  color: #e8e8ea;
-  font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
+  color: #e8e8ea; font-weight: 500;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 .dpr-q-size { color: #4f4f56; font-size: 11px; white-space: nowrap; }
 .dpr-q-status {
@@ -164,11 +153,9 @@ _HOME_CSS = """
 .dpr-q-remove.q-btn {
   min-height: 24px !important; height: 24px !important;
   width: 24px !important; min-width: 24px !important;
-  padding: 0 !important;
-  border-radius: 6px !important;
+  padding: 0 !important; border-radius: 6px !important;
   border-color: transparent !important;
-  color: #4f4f56 !important;
-  background: transparent !important;
+  color: #4f4f56 !important; background: transparent !important;
 }
 .dpr-q-remove.q-btn:hover {
   color: #ff4d6a !important;
@@ -182,46 +169,33 @@ _HOME_CSS = """
 
 /* ── Action bar (centered) ─────────────────────────────────────── */
 .dpr-action-bar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: center;
+  display: flex; flex-wrap: wrap; gap: 10px;
+  align-items: center; justify-content: center;
   padding: 14px 18px;
   background: rgba(242, 116, 12, 0.04);
   border: 1px solid rgba(242, 116, 12, 0.20);
-  border-radius: 12px;
-  width: 100%;
-  max-width: 640px;
+  border-radius: 12px; width: 100%; max-width: 640px;
 }
 .dpr-action-bar-info {
-  flex: 1 1 100%;
-  color: #85858c;
-  font-size: 11.5px;
-  text-align: center;
-  margin-bottom: 4px;
+  flex: 1 1 100%; color: #85858c; font-size: 11.5px;
+  text-align: center; margin-bottom: 4px;
 }
 .dpr-action-bar-info b { color: #e8e8ea; font-weight: 600; }
 .dpr-action-bar-info .err { color: #ff4d6a; font-weight: 700; }
 
 /* ── Footer disclaimer ────────────────────────────────────────── */
 .dpr-home-footer {
-  width: 100%;
-  max-width: 640px;
-  margin: 40px auto 0 auto;
-  padding: 18px 8px 0 8px;
-  text-align: center;
-  color: #6a6a72;
+  width: 100%; max-width: 640px;
+  margin: 40px auto 0 auto; padding: 18px 8px 0 8px;
+  text-align: center; color: #6a6a72;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11.5px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  line-height: 1.65;
+  font-size: 11.5px; font-weight: 400;
+  letter-spacing: 0.01em; line-height: 1.65;
   border-top: 1px solid rgba(242, 116, 12, 0.10);
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   AI processing state — big "Please wait" + blinking rectangle
+   AI processing state
    ═══════════════════════════════════════════════════════════════ */
 .dpr-processing {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
@@ -229,9 +203,7 @@ _HOME_CSS = """
   border-radius: 16px;
   padding: 44px 30px 34px 30px;
   text-align: center;
-  width: 100%;
-  max-width: 900px;
-  margin: 0 auto;
+  width: 100%; max-width: 900px; margin: 0 auto;
   animation: dpr-fade-in .4s ease;
 }
 @keyframes dpr-fade-in {
@@ -242,26 +214,19 @@ _HOME_CSS = """
   color: #c8c8cc;
   font-family: 'JetBrains Mono', monospace;
   font-size: clamp(12px, 1.7vw, 13.5px);
-  font-weight: 500;
-  letter-spacing: 0.06em;
+  font-weight: 500; letter-spacing: 0.06em;
   margin: 0 0 20px 0;
 }
 .dpr-proc-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  margin: 0 0 4px 0;
-  flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: center;
+  gap: 18px; margin: 0 0 4px 0; flex-wrap: wrap;
 }
 .dpr-proc-title {
   color: #F2740C;
   font-family: 'JetBrains Mono', monospace;
   font-size: clamp(26px, 4.6vw, 40px);
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  line-height: 1.1;
+  font-weight: 800; letter-spacing: 0.16em;
+  text-transform: uppercase; line-height: 1.1;
   animation: dpr-proc-pulse 2.4s ease-in-out infinite;
 }
 @keyframes dpr-proc-pulse {
@@ -269,11 +234,8 @@ _HOME_CSS = """
   50%      { opacity: 0.82; text-shadow: 0 0 24px rgba(242, 116, 12, 0.5); }
 }
 .dpr-proc-blink {
-  display: inline-block;
-  width: 26px;
-  height: 13px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.85);
+  display: inline-block; width: 26px; height: 13px;
+  border-radius: 2px; background: rgba(255, 255, 255, 0.85);
   animation: dpr-blink 2.6s ease-in-out infinite;
 }
 @keyframes dpr-blink {
@@ -281,10 +243,7 @@ _HOME_CSS = """
   50%      { opacity: 0.55; }
 }
 .dpr-proc-dots::after {
-  content: "";
-  display: inline-block;
-  width: 1.5em;
-  text-align: left;
+  content: ""; display: inline-block; width: 1.5em; text-align: left;
   animation: dpr-dots 1.4s steps(4, end) infinite;
 }
 @keyframes dpr-dots {
@@ -297,22 +256,12 @@ _HOME_CSS = """
 .dpr-proc-hint {
   color: #4f4f56;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  margin-top: 26px;
+  font-size: 11px; letter-spacing: 0.10em;
+  text-transform: uppercase; margin-top: 26px;
 }
-.dpr-proc-graphic {
-  max-width: 820px;
-  margin: 28px auto 0 auto;
-}
-.dpr-proc-graphic svg {
-  width: 100%;
-  height: auto;
-  display: block;
-}
+.dpr-proc-graphic { max-width: 820px; margin: 28px auto 0 auto; }
+.dpr-proc-graphic svg { width: 100%; height: auto; display: block; }
 
-/* ── Small-phone refinements ──────────────────────────────────── */
 @media (max-width: 640px) {
   .dpr-home-main    { gap: 16px; }
   .dpr-drop-visual  { padding: 40px 14px 34px 14px; gap: 20px; }
@@ -358,14 +307,10 @@ _PROCESSING_HTML = """
         </linearGradient>
       </defs>
 
-      <!-- Blueprint grid -->
       <rect width="820" height="300" fill="url(#dprBlueprintGrid)"/>
-
-      <!-- Ground line -->
       <line x1="0" y1="262" x2="820" y2="262"
             stroke="rgba(242,116,12,0.45)" stroke-width="1"/>
 
-      <!-- Buildings — animated outline draw + subtle fill rise -->
       <g stroke="#F2740C" stroke-width="1.4" stroke-linejoin="round"
          fill="url(#dprFillGrad)">
         <rect x="60" y="160" width="70" height="102"
@@ -406,7 +351,6 @@ _PROCESSING_HTML = """
         </rect>
       </g>
 
-      <!-- Floor separator lines inside buildings -->
       <g stroke="rgba(242,116,12,0.25)" stroke-width="0.6">
         <line x1="60"  y1="193" x2="130" y2="193"/>
         <line x1="60"  y1="226" x2="130" y2="226"/>
@@ -422,7 +366,6 @@ _PROCESSING_HTML = """
         <line x1="590" y1="226" x2="675" y2="226"/>
       </g>
 
-      <!-- Pulsing survey markers on top of each building -->
       <g fill="#F2740C">
         <circle cx="95"  cy="160" r="3">
           <animate attributeName="r"       values="3;6;3" dur="1.8s" repeatCount="indefinite"/>
@@ -450,7 +393,6 @@ _PROCESSING_HTML = """
         </circle>
       </g>
 
-      <!-- Scanning line sweeping left → right -->
       <rect x="-80" y="0" width="80" height="300" fill="url(#dprScanGrad)">
         <animate attributeName="x" from="-80" to="820"
                  dur="3.6s" repeatCount="indefinite"/>
@@ -458,9 +400,7 @@ _PROCESSING_HTML = """
     </svg>
   </div>
 
-  <div class="dpr-proc-hint">
-    Extracting · Merging · Verifying
-  </div>
+  <div class="dpr-proc-hint">Extracting · Merging · Verifying</div>
 </div>
 """
 
@@ -484,9 +424,6 @@ def render() -> None:
 
 
 def _body() -> None:
-    # ═══════════════════════════════════════════════════════════════
-    # Upload handler
-    # ═══════════════════════════════════════════════════════════════
     async def handle_upload(e) -> None:
         filename = e.name
         try:
@@ -495,17 +432,14 @@ def _body() -> None:
                     f"You've reached the {settings.MAX_FILES}-file limit "
                     f"for this project. Please remove a file from the "
                     f"queue before adding more.",
-                    color="orange",
-                    position="top",
-                    group="upload-limit",
-                    timeout=5000,
+                    color="orange", position="top",
+                    group="upload-limit", timeout=5000,
                 )
                 return
 
             data = e.content.read()
             validate_upload(filename, data)
 
-            # Deduplicate accidental re-uploads
             for existing in state.queue_files():
                 if (existing["name"] == filename
                         and existing["size"] == len(data)
@@ -527,20 +461,16 @@ def _body() -> None:
             ui.notify(f"Upload failed: {ex}", color="red",
                       position="top", group="upload-err")
 
-    # ═══════════════════════════════════════════════════════════════
-    # Hidden uploader + custom centered drop-zone visual
-    # ═══════════════════════════════════════════════════════════════
     uploader = ui.upload(
         on_upload=handle_upload,
         multiple=True,
         auto_upload=True,
         max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
     ).props(
-        f'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt '
-        f'no-thumbnails'
+        'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt no-thumbnails'
     ).classes("dpr-drop-input")
 
-    def _open_picker() -> None:
+    def _open_picker(_ev=None) -> None:
         try:
             uploader.run_method("pickFiles")
         except Exception as ex:
@@ -548,18 +478,14 @@ def _body() -> None:
             ui.notify("Could not open file picker — please tap again.",
                       color="red", position="top")
 
-    # ═══════════════════════════════════════════════════════════════
-    # Main UI (hidden when processing) + loading UI
-    # ═══════════════════════════════════════════════════════════════
     main_ui = ui.element("div").classes("dpr-home-main")
 
-    loading_ui = ui.element("div")
-    loading_ui.style("display: none; width: 100%;")
+    loading_ui = ui.element("div").classes("dpr-loading-wrap")
+    loading_ui.set_visibility(False)
     with loading_ui:
         ui.html(_PROCESSING_HTML)
 
     with main_ui:
-        # ── Custom drop-zone visual ─────────────────────────────────
         with ui.element("div").classes("dpr-drop-wrap"):
             with ui.element("div").classes("dpr-drop-visual").on(
                 "click", _open_picker
@@ -569,7 +495,6 @@ def _body() -> None:
                 )
                 ui.html('<div class="dpr-drop-plus">+</div>')
 
-        # ── Hint line ───────────────────────────────────────────────
         ui.html(
             f'<div class="dpr-home-hint">'
             f'Up to {settings.MAX_FILES} files · '
@@ -578,7 +503,6 @@ def _body() -> None:
             f'</div>'
         )
 
-        # ── Queue panel ─────────────────────────────────────────────
         @ui.refreshable
         def queue_panel() -> None:
             q = state.queue_files()
@@ -618,7 +542,6 @@ def _body() -> None:
             queue_panel.refresh()
             action_bar.refresh()
 
-        # ── Aggregate job ───────────────────────────────────────────
         running = {"active": False}
 
         def _show_processing() -> None:
@@ -731,7 +654,6 @@ def _body() -> None:
                     if f["status"] != "error":
                         state.set_status(f["token"], "done")
 
-                # Item 9 — take the user to the report tab automatically.
                 ui.navigate.to("/results")
 
             except Exception as ex:
@@ -742,7 +664,6 @@ def _body() -> None:
                 _hide_processing()
                 _refresh_all()
 
-        # ── Action bar (centered) ───────────────────────────────────
         @ui.refreshable
         def action_bar() -> None:
             q = state.queue_files()
@@ -772,12 +693,8 @@ def _body() -> None:
         queue_panel()
         action_bar()
 
-        # ── Footer disclaimer (item 7) ──────────────────────────────
         ui.html(_FOOTER_HTML)
 
-    # ═══════════════════════════════════════════════════════════════
-    # Event drain — silent; only updates queue badge states
-    # ═══════════════════════════════════════════════════════════════
     def _drain_events() -> None:
         events = state.drain_events()
         if not events:
