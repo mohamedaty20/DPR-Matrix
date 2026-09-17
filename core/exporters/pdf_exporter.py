@@ -21,7 +21,8 @@ from core import summary as SUM
 
 
 GREEN  = colors.HexColor("#C75A00")   # Caterpillar dark orange for PDF
-BLACK  = colors.HexColor(EXPORT_THEME["body"])
+BLACK  = colors.HexColor("#000000")   # pure black for the main title
+BODY   = colors.HexColor(EXPORT_THEME["body"])
 GREY   = colors.HexColor("#888888")
 LIGHT  = colors.HexColor("#EEEEEE")
 AMBER  = colors.HexColor("#B76E00")
@@ -67,14 +68,15 @@ def _e(s) -> str:
 def _styles():
     base = getSampleStyleSheet()
     return {
+        # Item 3 — the main PDF title is BLACK, not orange.
         "title": ParagraphStyle(
             "DprTitle", parent=base["Heading1"],
-            textColor=GREEN, fontName="Helvetica-Bold",
+            textColor=BLACK, fontName="Helvetica-Bold",
             fontSize=18, leading=22, spaceAfter=2, alignment=TA_LEFT,
         ),
         "subtitle": ParagraphStyle(
             "DprSubtitle", parent=base["Heading2"],
-            textColor=BLACK, fontName="Helvetica", fontSize=10, leading=13,
+            textColor=BODY, fontName="Helvetica", fontSize=10, leading=13,
             spaceAfter=8,
         ),
         "h2": ParagraphStyle(
@@ -89,16 +91,16 @@ def _styles():
         ),
         "body": ParagraphStyle(
             "DprBody", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica", fontSize=9, leading=11.5,
+            textColor=BODY, fontName="Helvetica", fontSize=9, leading=11.5,
         ),
         "bullet": ParagraphStyle(
             "DprBullet", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica", fontSize=9, leading=11.5,
+            textColor=BODY, fontName="Helvetica", fontSize=9, leading=11.5,
             leftIndent=10, bulletIndent=2,
         ),
         "cell": ParagraphStyle(
             "DprCell", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica",
+            textColor=BODY, fontName="Helvetica",
             fontSize=7.5, leading=9,
         ),
         "cell_head": ParagraphStyle(
@@ -108,22 +110,22 @@ def _styles():
         ),
         "cell_strong": ParagraphStyle(
             "DprCellStrong", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica-Bold",
+            textColor=BODY, fontName="Helvetica-Bold",
             fontSize=7.5, leading=9,
         ),
         "meta_label": ParagraphStyle(
             "DprMetaLabel", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica-Bold",
+            textColor=BODY, fontName="Helvetica-Bold",
             fontSize=8.5, leading=11,
         ),
         "meta_value": ParagraphStyle(
             "DprMetaValue", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica",
+            textColor=BODY, fontName="Helvetica",
             fontSize=8.5, leading=11,
         ),
         "exec": ParagraphStyle(
             "DprExec", parent=base["BodyText"],
-            textColor=BLACK, fontName="Helvetica",
+            textColor=BODY, fontName="Helvetica",
             fontSize=9, leading=12, spaceBefore=2, spaceAfter=4,
         ),
     }
@@ -172,6 +174,11 @@ def _build_table(items: list, styles, *, table_kind: str = "",
                 v = it.get(k, "")
                 if isinstance(v, list):
                     v = ", ".join(str(x) for x in v)
+                elif isinstance(v, dict):
+                    v = " · ".join(
+                        f"{kk}: {vv}"
+                        for kk, vv in v.items() if vv not in (None, "")
+                    )
                 row_cells.append(Paragraph(_e(v), styles["cell"]))
             rows.append(row_cells)
 
@@ -246,52 +253,22 @@ def _decode_logo(report: AggregatedReport) -> ImageReader | None:
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Summary section for the PDF
+#
+# Item 1 of the current request: the Executive Summary block — the
+# "Executive Summary" heading, the "STATUS: …" banner, and the
+# "Hard conflicts or low data quality — engineer review required before
+# export." description — has been REMOVED from the PDF. The summary now
+# begins directly with the Grand totals table.
 # ═══════════════════════════════════════════════════════════════════════════
-_STATUS_COLORS = {
-    "on_track":  GREEN,
-    "attention": AMBER,
-    "at_risk":   RED,
-}
-
-
 def _summary_story(report, S) -> list:
     s = SUM.compute(report)
     story: list = []
 
-    # ── Status banner ────────────────────────────────────────────────
-    status_color = _STATUS_COLORS.get(s["status"], GREEN)
-    banner = Table(
-        [[Paragraph(
-            f'<b>STATUS: {_e(s["status_label"])}</b><br/>'
-            f'<font size="8">{_e(s["status_detail"])}</font>',
-            ParagraphStyle(
-                "status", parent=S["body"],
-                textColor=colors.white, fontName="Helvetica-Bold",
-                fontSize=10, leading=13,
-            ),
-        )]],
-        colWidths=[PAGE[0] - 4 * cm],
-    )
-    banner.setStyle(TableStyle([
-        ("BACKGROUND",   (0, 0), (-1, -1), status_color),
-        ("LEFTPADDING",  (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
-        ("TOPPADDING",   (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
-    ]))
-    story.append(Paragraph("Executive Summary", S["h2"]))
-    story.append(banner)
-    story.append(Spacer(1, 6))
-
-    # ── Executive text ───────────────────────────────────────────────
-    if s["exec_summary"]:
-        story.append(Paragraph(_e(s["exec_summary"]), S["exec"]))
-
-    # ── Grand totals ─────────────────────────────────────────────────
+    # ── Grand totals (Executive Summary block removed) ───────────────
     totals_rows = [
         [Paragraph("<b>Total Crew</b>", S["cell_strong"]),
          Paragraph(f"{s['total_crew']} "
-                   f"({s['skilled']} skilled · {s['helpers']} helpers)",
+                   f"({s['skilled']} skilled · {s['helpers']} assistants)",
                    S["cell"]),
          Paragraph("<b>Quality Grade</b>", S["cell_strong"]),
          Paragraph(f"{s['quality'].grade} — score {s['quality'].score}/100",
@@ -400,12 +377,13 @@ def export_pdf(report: AggregatedReport) -> bytes:
     def _val(text):
         return Paragraph(_e(text if text else "—"), S["meta_value"])
 
+    # Item 2 — Weather row removed from the PDF header block.
     meta_rows = [
         [_lbl("Date"), _val(report.report_date),
          _lbl("Prepared By"), _val(report.prepared_by)],
         [_lbl("Location"),
          _val(pm.get("location") or report.site_location),
-         _lbl("Weather"), _val(pm.get("weather") or report.weather)],
+         _lbl(""), _val("")],
     ]
     company = pm.get("company_name") or ""
     contractor = pm.get("contractor") or ""
