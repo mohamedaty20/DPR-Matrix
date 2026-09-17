@@ -1,8 +1,4 @@
-"""PDF export — compact landscape tables + logo header.
-
-Logo is drawn from report.project_meta['logo_b64'] (base64-encoded image).
-Company / contractor / consultant rows are added to the meta grid when set.
-"""
+"""PDF export — Summary + compact landscape tables + logo header."""
 from __future__ import annotations
 import base64
 import io
@@ -21,16 +17,16 @@ from reportlab.platypus import (
 
 from core.models import AggregatedReport
 from core.exporters.styles import EXPORT_THEME
+from core import summary as SUM
 
 
-# ---------------------------------------------------------------------------
-# Style tokens
-# ---------------------------------------------------------------------------
-GREEN = colors.HexColor(EXPORT_THEME["title"])
-BLACK = colors.HexColor(EXPORT_THEME["body"])
-GREY  = colors.HexColor("#888888")
-LIGHT = colors.HexColor("#EEEEEE")
-PAGE  = landscape(A4)
+GREEN  = colors.HexColor(EXPORT_THEME["title"])
+BLACK  = colors.HexColor(EXPORT_THEME["body"])
+GREY   = colors.HexColor("#888888")
+LIGHT  = colors.HexColor("#EEEEEE")
+AMBER  = colors.HexColor("#B76E00")
+RED    = colors.HexColor("#B00020")
+PAGE   = landscape(A4)
 
 _HIDDEN_COLUMNS = {"sources", "provenance"}
 
@@ -53,6 +49,13 @@ _WIDTHS: dict[str, dict[str, float]] = {
     },
     "personnel": {
         "trade": 4.0, "count": 1.8, "building": 2.5, "notes": 14.0,
+    },
+    "summary_buildings": {
+        "building": 4.0, "floors": 2.0, "activities": 2.5,
+        "top_activity": 9.0, "crew": 2.5,
+    },
+    "summary_activities": {
+        "activity": 9.0, "buildings": 2.5, "rows": 2.5, "crew": 3.0,
     },
 }
 
@@ -103,6 +106,11 @@ def _styles():
             textColor=GREEN, fontName="Helvetica-Bold",
             fontSize=7.5, leading=9,
         ),
+        "cell_strong": ParagraphStyle(
+            "DprCellStrong", parent=base["BodyText"],
+            textColor=BLACK, fontName="Helvetica-Bold",
+            fontSize=7.5, leading=9,
+        ),
         "meta_label": ParagraphStyle(
             "DprMetaLabel", parent=base["BodyText"],
             textColor=BLACK, fontName="Helvetica-Bold",
@@ -113,12 +121,14 @@ def _styles():
             textColor=BLACK, fontName="Helvetica",
             fontSize=8.5, leading=11,
         ),
+        "exec": ParagraphStyle(
+            "DprExec", parent=base["BodyText"],
+            textColor=BLACK, fontName="Helvetica",
+            fontSize=9, leading=12, spaceBefore=2, spaceAfter=4,
+        ),
     }
 
 
-# ---------------------------------------------------------------------------
-# Column widths
-# ---------------------------------------------------------------------------
 def _column_widths(table_kind: str, keys: list[str], avail_w: float) -> list[float]:
     hints = _WIDTHS.get(table_kind)
     if hints:
@@ -132,21 +142,22 @@ def _column_widths(table_kind: str, keys: list[str], avail_w: float) -> list[flo
     return [avail_w / n] * n
 
 
-# ---------------------------------------------------------------------------
-# Table builder
-# ---------------------------------------------------------------------------
-def _build_table(items: list, styles, *, table_kind: str = "") -> Table | None:
+def _build_table(items: list, styles, *, table_kind: str = "",
+                 keys_order: list[str] | None = None) -> Table | None:
     if not items:
         return None
 
     if isinstance(items[0], dict):
         keys: list[str] = []
-        for it in items:
-            for k in it.keys():
-                if k in _HIDDEN_COLUMNS:
-                    continue
-                if k not in keys:
-                    keys.append(k)
+        if keys_order:
+            keys = [k for k in keys_order if k in items[0]]
+        else:
+            for it in items:
+                for k in it.keys():
+                    if k in _HIDDEN_COLUMNS:
+                        continue
+                    if k not in keys:
+                        keys.append(k)
         if not keys:
             return None
 
@@ -187,26 +198,17 @@ def _build_table(items: list, styles, *, table_kind: str = "") -> Table | None:
     return t
 
 
-# ---------------------------------------------------------------------------
-# Page header / footer
-# ---------------------------------------------------------------------------
 def _make_page_handler(project_name: str, logo_reader: ImageReader | None):
     def _on_page(canvas, doc):
         canvas.saveState()
         w, h = PAGE
-
-        # Top rule
         canvas.setStrokeColor(GREEN)
         canvas.setLineWidth(0.5)
         canvas.line(2 * cm, h - 1.3 * cm, w - 2 * cm, h - 1.3 * cm)
-
-        # Left: project name
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(GREY)
         canvas.drawString(2 * cm, h - 1.05 * cm,
                           f"DPR — {project_name or 'Untitled'}")
-
-        # Right: logo (if any)
         if logo_reader is not None:
             try:
                 canvas.drawImage(
@@ -217,8 +219,6 @@ def _make_page_handler(project_name: str, logo_reader: ImageReader | None):
                 )
             except Exception:
                 pass
-
-        # Bottom rule + footer
         canvas.setStrokeColor(GREEN)
         canvas.line(2 * cm, 1.3 * cm, w - 2 * cm, 1.3 * cm)
         canvas.setFont("Helvetica", 8)
@@ -229,7 +229,6 @@ def _make_page_handler(project_name: str, logo_reader: ImageReader | None):
         )
         canvas.drawRightString(w - 2 * cm, 0.85 * cm, f"Page {doc.page}")
         canvas.restoreState()
-
     return _on_page
 
 
@@ -245,9 +244,138 @@ def _decode_logo(report: AggregatedReport) -> ImageReader | None:
         return None
 
 
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
+# Summary section for the PDF
+# ═══════════════════════════════════════════════════════════════════════════
+_STATUS_COLORS = {
+    "on_track":  GREEN,
+    "attention": AMBER,
+    "at_risk":   RED,
+}
+
+
+def _summary_story(report, S) -> list:
+    s = SUM.compute(report)
+    story: list = []
+
+    # ── Status banner ────────────────────────────────────────────────
+    status_color = _STATUS_COLORS.get(s["status"], GREEN)
+    banner = Table(
+        [[Paragraph(
+            f'<b>STATUS: {_e(s["status_label"])}</b><br/>'
+            f'<font size="8">{_e(s["status_detail"])}</font>',
+            ParagraphStyle(
+                "status", parent=S["body"],
+                textColor=colors.white, fontName="Helvetica-Bold",
+                fontSize=10, leading=13,
+            ),
+        )]],
+        colWidths=[PAGE[0] - 4 * cm],
+    )
+    banner.setStyle(TableStyle([
+        ("BACKGROUND",   (0, 0), (-1, -1), status_color),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING",   (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 8),
+    ]))
+    story.append(Paragraph("Executive Summary", S["h2"]))
+    story.append(banner)
+    story.append(Spacer(1, 6))
+
+    # ── Executive text ───────────────────────────────────────────────
+    if s["exec_summary"]:
+        story.append(Paragraph(_e(s["exec_summary"]), S["exec"]))
+
+    # ── Grand totals ─────────────────────────────────────────────────
+    totals_rows = [
+        [Paragraph("<b>Total Crew</b>", S["cell_strong"]),
+         Paragraph(f"{s['total_crew']} "
+                   f"({s['skilled']} skilled · {s['helpers']} helpers)",
+                   S["cell"]),
+         Paragraph("<b>Quality Grade</b>", S["cell_strong"]),
+         Paragraph(f"{s['quality'].grade} — score {s['quality'].score}/100",
+                   S["cell"])],
+        [Paragraph("<b>Work Rows</b>", S["cell_strong"]),
+         Paragraph(str(s["total_rows"]), S["cell"]),
+         Paragraph("<b>Buildings</b>", S["cell_strong"]),
+         Paragraph(str(s["total_buildings"]), S["cell"])],
+        [Paragraph("<b>Activities</b>", S["cell_strong"]),
+         Paragraph(str(s["total_activities"]), S["cell"]),
+         Paragraph("<b>Avg Progress</b>", S["cell_strong"]),
+         Paragraph(f"{s['avg_progress']:.0f}%", S["cell"])],
+    ]
+    totals_t = Table(
+        totals_rows,
+        colWidths=[3.0 * cm, 8.5 * cm, 3.0 * cm, 8.5 * cm],
+    )
+    totals_t.setStyle(TableStyle([
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 3),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+        ("TOPPADDING",   (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+        ("LINEBELOW",    (0, 0), (-1, -2), 0.15, LIGHT),
+    ]))
+    story.append(totals_t)
+    story.append(Spacer(1, 6))
+
+    # ── Per-building table ───────────────────────────────────────────
+    if s["buildings"]:
+        rows_data = [{
+            "building": f'Building {b["building"]}',
+            "floors": b["floors"],
+            "activities": b["activities"],
+            "top_activity": b["top_activity"],
+            "crew": b["crew"],
+        } for b in s["buildings"]]
+        tbl = _build_table(
+            rows_data, S, table_kind="summary_buildings",
+            keys_order=["building", "floors", "activities",
+                        "top_activity", "crew"],
+        )
+        if tbl:
+            story.append(Paragraph("Crew Distribution by Building", S["h2"]))
+            story.append(tbl)
+            story.append(Spacer(1, 6))
+
+    # ── Per-activity table ───────────────────────────────────────────
+    if s["activities"]:
+        total_crew = s["total_crew"] or 1
+        rows_data = [{
+            "activity": a["activity"],
+            "buildings": a["buildings"],
+            "rows": a["rows"],
+            "crew": f'{a["crew"]}  ({a["crew"] / total_crew * 100:.0f}%)',
+        } for a in s["activities"]]
+        tbl = _build_table(
+            rows_data, S, table_kind="summary_activities",
+            keys_order=["activity", "buildings", "rows", "crew"],
+        )
+        if tbl:
+            story.append(Paragraph("Activity Breakdown", S["h2"]))
+            story.append(tbl)
+            story.append(Spacer(1, 6))
+
+    # ── Decision flags ───────────────────────────────────────────────
+    if s["flags"]:
+        story.append(Paragraph("Decision Flags", S["h2"]))
+        for f in s["flags"]:
+            story.append(Paragraph(f"• {_e(f)}", S["bullet"]))
+        story.append(Spacer(1, 6))
+    else:
+        story.append(Paragraph("Decision Flags", S["h2"]))
+        story.append(Paragraph(
+            "• No flags raised. Data is clean and consistent across sources.",
+            S["bullet"],
+        ))
+
+    return story
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Public entry
-# ---------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════════════════
 def export_pdf(report: AggregatedReport) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -261,15 +389,12 @@ def export_pdf(report: AggregatedReport) -> bytes:
     story = []
     pm = report.project_meta or {}
 
-    # ---- Title block ----
+    # ── Title + meta ─────────────────────────────────────────────────
     story.append(Paragraph("Daily Progress Report", S["title"]))
-    display_name = (
-        pm.get("project_name") or report.project_name or ""
-    )
+    display_name = pm.get("project_name") or report.project_name or ""
     if display_name:
         story.append(Paragraph(_e(display_name), S["subtitle"]))
 
-    # ---- Meta grid ----
     def _lbl(text):
         return Paragraph(_e(text), S["meta_label"])
     def _val(text):
@@ -308,9 +433,13 @@ def export_pdf(report: AggregatedReport) -> bytes:
         ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
     ]))
     story.append(meta_t)
-    story.append(Spacer(1, 6))
+    story.append(Spacer(1, 8))
 
-    # ---- Sections ----
+    # ── Summary section ──────────────────────────────────────────────
+    story.extend(_summary_story(report, S))
+    story.append(Spacer(1, 8))
+
+    # ── Section helpers ──────────────────────────────────────────────
     def bullet_section(title: str, items: list) -> None:
         if not items:
             return
@@ -337,18 +466,15 @@ def export_pdf(report: AggregatedReport) -> bytes:
     table_section("Materials",     report.materials,     kind="materials")
 
     bullet_section("HSE Observations", report.hse_observations)
-
     if report.incidents:
         story.append(KeepTogether([
             Paragraph("Incidents", S["h2"]),
             Paragraph(_e(report.incidents), S["body"]),
         ]))
-
     bullet_section("Quality Checks", report.quality_checks)
     bullet_section("Issues & Risks", report.issues_risks)
     bullet_section("Next Day Plan", report.next_day_plan)
 
-    # ---- Build ----
     logo_reader = _decode_logo(report)
     on_page = _make_page_handler(
         pm.get("project_name") or report.project_name or "",
