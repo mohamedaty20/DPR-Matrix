@@ -10,9 +10,6 @@ from config import settings
 from core.models import AggregatedReport
 
 
-# ---------------------------------------------------------------------------
-# Schema
-# ---------------------------------------------------------------------------
 _SCHEMA = [
     """
     CREATE TABLE IF NOT EXISTS reports (
@@ -42,11 +39,6 @@ _SCHEMA = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Migrations — idempotent column additions for older live databases.
-# `CREATE TABLE IF NOT EXISTS` never alters an existing table, so any column
-# that shipped after the very first release must be added explicitly here.
-# ---------------------------------------------------------------------------
 _MIGRATIONS: list[tuple[str, str, str]] = [
     ("reports", "project_name",  "TEXT"),
     ("reports", "report_date",   "TEXT"),
@@ -76,17 +68,12 @@ def _apply_migrations(conn) -> None:
         try:
             if _column_exists(conn, table, column):
                 continue
-            conn.execute(
-                f"ALTER TABLE {table} ADD COLUMN {column} {coltype}"
-            )
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
             conn.commit()
             print(f"[db] migration: added {table}.{column}", flush=True)
         except Exception as e:
-            print(
-                f"[db] migration skipped {table}.{column}: "
-                f"{type(e).__name__}: {e}",
-                flush=True,
-            )
+            print(f"[db] migration skipped {table}.{column}: "
+                  f"{type(e).__name__}: {e}", flush=True)
 
 
 def init_db() -> None:
@@ -103,7 +90,6 @@ def init_db() -> None:
 # ---------------------------------------------------------------------------
 def save_report(report: AggregatedReport,
                 uploads_meta: list[dict] | None = None) -> int:
-    """Persist one aggregated report. Returns the new report id."""
     conn = get_db()
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     payload = json.dumps(report.to_dict(), ensure_ascii=False)
@@ -150,6 +136,34 @@ def save_report(report: AggregatedReport,
     return report_id
 
 
+def update_report_payload(report_id: int, report: AggregatedReport) -> None:
+    """Update the stored payload (and summary columns) for an existing report.
+
+    Used when the user edits project details on the results page — the
+    payload JSON is rewritten with the new project_meta dict.
+    """
+    conn = get_db()
+    payload = json.dumps(report.to_dict(), ensure_ascii=False)
+    conn.execute(
+        """
+        UPDATE reports
+        SET payload = ?, project_name = ?, report_date = ?,
+            site_location = ?, prepared_by = ?, source_files = ?
+        WHERE id = ?
+        """,
+        (
+            payload,
+            report.project_name or "",
+            report.report_date or "",
+            report.site_location or "",
+            report.prepared_by or "",
+            ", ".join(report.source_files or []),
+            report_id,
+        ),
+    )
+    conn.commit()
+
+
 def delete_report(report_id: int) -> None:
     conn = get_db()
     conn.execute("DELETE FROM uploads WHERE report_id = ?", (report_id,))
@@ -158,7 +172,6 @@ def delete_report(report_id: int) -> None:
 
 
 def cleanup_old_reports(keep_per_project: int = 90) -> int:
-    """Keep the newest N reports per project. Returns rows deleted."""
     conn = get_db()
     cur = conn.execute(
         """
@@ -185,11 +198,6 @@ def cleanup_old_reports(keep_per_project: int = 90) -> int:
 # Read
 # ---------------------------------------------------------------------------
 def list_reports(limit: int = 100) -> list[dict[str, Any]]:
-    """
-    Return recent report summaries. Tries the full column set first; if the
-    live table is missing an optional column, falls back to a minimal query
-    so History and risk analysis keep working.
-    """
     conn = get_db()
     try:
         cur = conn.execute(
@@ -207,10 +215,8 @@ def list_reports(limit: int = 100) -> list[dict[str, Any]]:
         cur = conn.execute(
             """
             SELECT id, created_at,
-                   '' AS project_name,
-                   '' AS report_date,
-                   '' AS site_location,
-                   '' AS prepared_by,
+                   '' AS project_name, '' AS report_date,
+                   '' AS site_location, '' AS prepared_by,
                    '' AS source_files
             FROM reports
             ORDER BY created_at DESC
