@@ -2,6 +2,12 @@
 
 Pure functions. No UI, no I/O. Used by both the web Summary tab and the
 PDF exporter, so the two stay in sync.
+
+Pass 2 changes (items 10, 11, 20):
+  - Adds `structured_flags` — a machine-readable list of decision flags
+    that the UI can render as clickable cards with modals.
+  - Keeps the legacy `flags: list[str]` for PDF export compatibility.
+  - All display text uses "assistant(s)", never "helper(s)".
 """
 from __future__ import annotations
 
@@ -27,6 +33,8 @@ def compute(rpt) -> dict:
         e = bb.setdefault(b, {
             "floors": set(), "activities": set(),
             "crew": 0, "rows": 0, "top_counts": {},
+            "skilled": 0, "assistants": 0,
+            "rows_list": [],
         })
         fl = (r.get("floor") or "").strip()
         if fl:
@@ -35,9 +43,13 @@ def compute(rpt) -> dict:
         if a:
             e["activities"].add(a)
             e["top_counts"][a] = e["top_counts"].get(a, 0) + 1
-        e["crew"] += int(to_float(r.get("skilled")) or 0) \
-                     + int(to_float(r.get("helpers")) or 0)
-        e["rows"] += 1
+        sk = int(to_float(r.get("skilled")) or 0)
+        hp = int(to_float(r.get("helpers")) or 0)  # field name unchanged
+        e["skilled"]    += sk
+        e["assistants"] += hp
+        e["crew"]       += sk + hp
+        e["rows"]       += 1
+        e["rows_list"].append(r)
 
     buildings = []
     for b, e in bb.items():
@@ -50,6 +62,8 @@ def compute(rpt) -> dict:
             "activities": len(e["activities"]),
             "rows": e["rows"],
             "crew": e["crew"],
+            "skilled": e["skilled"],
+            "assistants": e["assistants"],
             "top_activity": top,
         })
     buildings.sort(key=lambda x: (-x["crew"], x["building"]))
@@ -90,10 +104,16 @@ def compute(rpt) -> dict:
     avg_prog = (sum(prog_vals) / len(prog_vals)) if prog_vals else 0.0
 
     # ── Status / decision flags ────────────────────────────────────────
-    n_hard = sum(1 for c in rpt.conflicts if c.get("severity") == "hard")
-    n_soft = sum(1 for c in rpt.conflicts if c.get("severity") == "soft")
-    n_low_conf = sum(1 for r in rpt.work_progress
-                     if r.get("confidence") == "low")
+    hard_conflicts = [c for c in rpt.conflicts
+                      if c.get("severity") == "hard"]
+    soft_conflicts = [c for c in rpt.conflicts
+                      if c.get("severity") == "soft"]
+    low_conf_rows  = [r for r in rpt.work_progress
+                      if r.get("confidence") == "low"]
+
+    n_hard = len(hard_conflicts)
+    n_soft = len(soft_conflicts)
+    n_low_conf = len(low_conf_rows)
 
     if n_hard > 0 or q.score < 55:
         status, label = "at_risk", "AT RISK"
@@ -107,6 +127,7 @@ def compute(rpt) -> dict:
         status, label = "on_track", "ON TRACK"
         detail = "Clean data, no hard conflicts. Ready for export."
 
+    # ── Legacy plain-text flags (kept for the PDF exporter) ────────────
     flags: list[str] = []
     if n_hard:
         flags.append(f"{n_hard} hard conflict(s) — sources disagree; "
@@ -127,6 +148,41 @@ def compute(rpt) -> dict:
         flags.append("No crew headcounts extracted — check source "
                      "content.")
 
+    # ── Structured flags for the interactive UI (items 10, 11) ─────────
+    structured: list[dict] = []
+    if hard_conflicts:
+        structured.append({
+            "kind": "hard_conflicts",
+            "count": len(hard_conflicts),
+            "label": (f"{len(hard_conflicts)} of your uploaded files "
+                      f"gave different values for the same field"),
+            "conflicts": hard_conflicts,
+        })
+    if low_conf_rows:
+        structured.append({
+            "kind": "unify_headers",
+            "count": len(low_conf_rows),
+            "label": "Some headers should be unified",
+            "rows": low_conf_rows,
+        })
+    structured.append({
+        "kind": "quality_score",
+        "score": q.score,
+        "label": f"Data Quality is {q.score}%",
+    })
+    extra_info: list[str] = []
+    if n_soft:
+        extra_info.append(f"{n_soft} soft conflict(s) auto-resolved "
+                          f"within tolerance.")
+    if not rpt.hse_observations:
+        extra_info.append("No HSE observations recorded — confirm this "
+                          "is not an oversight.")
+    if total_crew == 0 and rpt.work_progress:
+        extra_info.append("No crew headcounts extracted — check source "
+                          "content.")
+    if extra_info:
+        structured.append({"kind": "info", "items": extra_info})
+
     # ── Executive summary ──────────────────────────────────────────────
     parts: list[str] = []
     if buildings:
@@ -138,7 +194,7 @@ def compute(rpt) -> dict:
         )
     parts.append(
         f"Total manpower on site: {total_crew} "
-        f"({sk} skilled · {hp} helpers)."
+        f"({sk} skilled · {hp} assistants)."
     )
     if prog_vals:
         parts.append(f"Average reported progress: {avg_prog:.0f}%.")
@@ -156,7 +212,8 @@ def compute(rpt) -> dict:
         "quality": q,
         "grade_tone": _grade_tone(q.score),
         "skilled": sk,
-        "helpers": hp,
+        "helpers": hp,            # field name kept for compatibility
+        "assistants": hp,         # new display alias
         "total_crew": total_crew,
         "total_rows": len(rpt.work_progress),
         "total_buildings": len(buildings),
@@ -167,6 +224,7 @@ def compute(rpt) -> dict:
         "n_low_conf": n_low_conf,
         "buildings": buildings,
         "activities": activities,
-        "flags": flags,
+        "flags": flags,                    # legacy, PDF-compatible
+        "structured_flags": structured,    # new, UI-driven
         "exec_summary": exec_summary,
-      }
+    }
