@@ -1,12 +1,13 @@
-"""Site Map — interactive matplotlib scatter with search + zoom + pan.
+"""Site Overview — interactive matplotlib pie chart with search + zoom.
 
-Item 24 rebuild:
-  - Search bar works: robust matching (100 / B100 / bldg 100 / whitespace),
-    debounced, plus a fallback Search button, plus auto-scroll to match.
-  - Scroll-wheel zoom (laptop) and pinch zoom (mobile) via client events.
-  - Hotspots enlarged to a real tap target (40 px), click-to-select works,
-    click on backdrop / same dot deselects, different dot switches.
-  - Zoom state is Python-owned and re-applied after every map refresh.
+Item 24 rebuild retained:
+  - Search: 100 / B100 / bldg 100 / whitespace all resolve.
+  - Scroll-wheel zoom (laptop) and pinch zoom (mobile).
+  - Click a slice hotspot to select, click again to deselect.
+
+Current pass: the matplotlib scatter was replaced with a pie chart
+(slice size = crew, slice colour = stage). Same search, same detail
+panel, same hotspot interaction.
 """
 from __future__ import annotations
 
@@ -18,7 +19,7 @@ from collections import Counter
 from nicegui import ui
 
 from core.normalize import to_float
-from core.scatter_map import render_scatter, STAGE_COLORS, STAGE_LABELS
+from core.scatter_map import render_pie, STAGE_COLORS, STAGE_LABELS
 from ui import state
 from ui.shell import page_shell
 
@@ -148,14 +149,11 @@ def _derive_zones(rpt) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════
 _ZONES_CSS = """
 <style>
-/* ── Toolbar ───────────────────────────────────────────────────── */
 .dpr-toolbar {
   display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
   margin-bottom: 6px;
 }
-.dpr-search-wrap {
-  flex: 1; min-width: 200px;
-}
+.dpr-search-wrap { flex: 1; min-width: 200px; }
 .dpr-search-btn.q-btn {
   min-height: 32px !important; height: 32px !important;
   padding: 0 14px !important; font-size: 11.5px !important;
@@ -229,7 +227,6 @@ _ZONES_CSS = """
   border: 1px solid rgba(242,116,12,0.20);
 }
 
-/* ── Viewport (scrollable map container) ──────────────────────── */
 .dpr-viewport {
   width: 100%;
   max-height: 72vh;
@@ -256,17 +253,16 @@ _ZONES_CSS = """
   -webkit-user-drag: none;
 }
 
-/* ── Hotspots — larger tap targets (item 24) ──────────────────── */
 .dpr-hotspot {
   position: absolute;
-  width: 40px; height: 40px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   cursor: pointer;
   background: transparent;
   border: 2px solid transparent;
   z-index: 4;
-  transition: background-color .12s ease, border-color .12s ease;
+  transition: background-color .12s ease, border-color .12s ease,
+              box-shadow .2s ease;
   -webkit-tap-highlight-color: transparent;
 }
 .dpr-hotspot:hover {
@@ -274,7 +270,7 @@ _ZONES_CSS = """
   border-color: rgba(242,116,12,0.65);
 }
 .dpr-hotspot.selected {
-  background: rgba(242,116,12,0.18);
+  background: rgba(242,116,12,0.16);
   border-color: #F2740C;
   box-shadow: 0 0 0 3px rgba(242,116,12,0.28),
               0 0 24px rgba(242,116,12,0.55);
@@ -291,7 +287,6 @@ _ZONES_CSS = """
   }
 }
 
-/* ── Detail panel ─────────────────────────────────────────────── */
 .dpr-map-wrap {
   display: grid;
   grid-template-columns: 1fr 300px;
@@ -357,7 +352,6 @@ _ZONES_CSS = """
   padding: 2px 7px; border-radius: 4px;
 }
 
-/* ── Bullet summary ───────────────────────────────────────────── */
 .dpr-points {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
   border: 1px solid rgba(242,116,12,0.20);
@@ -391,9 +385,6 @@ _ZONES_CSS = """
 """
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Client-side JS for scroll-wheel + pinch zoom
-# ═══════════════════════════════════════════════════════════════════════════
 _ZOOM_JS = """
 <script>
 (function () {
@@ -402,9 +393,7 @@ _ZOOM_JS = """
     if (!vp || vp.__dprZoomBound) return;
     vp.__dprZoomBound = true;
 
-    // ── Scroll-wheel zoom (laptop / desktop) ─────────────────────
     vp.addEventListener('wheel', function (e) {
-      // Require Ctrl/Cmd so a plain scroll can still pan the map.
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       var delta = e.deltaY < 0 ? 0.18 : -0.18;
@@ -413,7 +402,6 @@ _ZOOM_JS = """
       }
     }, {passive: false});
 
-    // ── Two-finger pinch zoom (mobile) ───────────────────────────
     var lastDist = 0;
     vp.addEventListener('touchstart', function (e) {
       if (e.touches && e.touches.length === 2) {
@@ -438,16 +426,11 @@ _ZOOM_JS = """
         }
       }
     }, {passive: true});
-    vp.addEventListener('touchend', function () {
-      lastDist = 0;
-    }, {passive: true});
-    vp.addEventListener('touchcancel', function () {
-      lastDist = 0;
-    }, {passive: true});
+    vp.addEventListener('touchend', function () { lastDist = 0; }, {passive: true});
+    vp.addEventListener('touchcancel', function () { lastDist = 0; }, {passive: true});
   }
 
   bindViewport();
-  // Re-bind after NiceGUI swaps DOM (page nav, refreshable updates).
   new MutationObserver(bindViewport).observe(document.body, {
     childList: true, subtree: true
   });
@@ -456,14 +439,11 @@ _ZOOM_JS = """
 """
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Detail panel
-# ═══════════════════════════════════════════════════════════════════════════
 def _render_selected(z: dict | None) -> None:
     if z is None:
         ui.html(
             '<div class="dpr-sel-empty">'
-            'Tap a point on the map — or search a building — '
+            'Tap a slice on the chart — or search a building — '
             'to see its status, crew, and activities.'
             '</div>'
         )
@@ -535,9 +515,6 @@ def _render_selected(z: dict | None) -> None:
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Bullet summary
-# ═══════════════════════════════════════════════════════════════════════════
 def _build_points(zones, rpt) -> dict:
     total_crew = sum(z["crew"] for z in zones)
     total_rows = sum(z["rows"] for z in zones)
@@ -615,16 +592,14 @@ def _build_points(zones, rpt) -> dict:
     return {"overview": overview, "watch": watch, "actions": actions}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Render
-# ═══════════════════════════════════════════════════════════════════════════
 def render():
     with page_shell(
         active="zones",
-        title="Site Map",
+        title="Site Overview",
         subtitle=(
-            "Interactive scatter of every active building. Zoom, search, "
-            "and tap a point to inspect it."
+            "Interactive pie chart of crew distribution by building. "
+            "Search a building to highlight its slice — tap any slice "
+            "to inspect it."
         ),
     ):
         ui.add_head_html(_ZONES_CSS, shared=False)
@@ -634,7 +609,7 @@ def render():
         if rpt is None:
             with ui.card().classes("dpr-card w-full"):
                 ui.label("No report in this session.").classes("dpr-title text-xl")
-                ui.label("Aggregate at least one file first — the map is "
+                ui.label("Aggregate at least one file first — the chart is "
                          "derived from the report's work progress rows.") \
                     .classes("text-white")
             with ui.row().classes("gap-3 mt-2"):
@@ -653,7 +628,9 @@ def render():
             )
             return
 
-        W_PX, H_PX = 1600.0, 760.0
+        # Dimensions of the PNG returned by render_pie (must match
+        # core/scatter_map.py).
+        W_PX, H_PX = 1400.0, 950.0
 
         app_state: dict = {
             "highlight_id": None,
@@ -709,7 +686,7 @@ def render():
         )
 
         # ═══════════════════════════════════════════════════════════
-        # Map + side panel
+        # Chart + side panel
         # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-map-wrap"):
             with ui.element("div").classes("dpr-viewport") as viewport:
@@ -720,7 +697,7 @@ def render():
             @ui.refreshable
             def map_view():
                 canvas.clear()
-                png_bytes, hotspots = render_scatter(
+                png_bytes, hotspots = render_pie(
                     zones, highlight_id=app_state["highlight_id"],
                 )
                 app_state["hotspots"] = hotspots
@@ -728,11 +705,12 @@ def render():
                 with canvas:
                     ui.html(
                         f'<img class="dpr-scatter-img" '
-                        f'src="data:image/png;base64,{b64}" alt="Site map"/>'
+                        f'src="data:image/png;base64,{b64}" alt="Crew pie"/>'
                     )
                     for hs in hotspots:
                         x_pct = hs["x_px"] / W_PX * 100.0
                         y_pct = hs["y_px"] / H_PX * 100.0
+                        size_px = float(hs.get("size_px", 40))
                         z = hs["zone"]
                         is_sel = (
                             app_state["selection"] is not None
@@ -740,7 +718,10 @@ def render():
                         )
                         cls = "dpr-hotspot" + (" selected" if is_sel else "")
                         el = ui.element("div").classes(cls)
-                        el.style(f"left:{x_pct:.3f}%; top:{y_pct:.3f}%;")
+                        el.style(
+                            f"left:{x_pct:.3f}%; top:{y_pct:.3f}%; "
+                            f"width:{size_px:.0f}px; height:{size_px:.0f}px;"
+                        )
                         el.on("click", lambda zz=z: _pick(zz))
 
             with ui.element("div").classes("dpr-sel-panel"):
@@ -892,9 +873,6 @@ def render():
             except Exception:
                 pass
 
-        # ═══════════════════════════════════════════════════════════
-        # Search debounce — 350 ms after last keystroke
-        # ═══════════════════════════════════════════════════════════
         _last_input = {"t": 0.0, "v": "", "done": None}
 
         def _on_input(e):
@@ -915,9 +893,6 @@ def render():
 
         ui.timer(0.15, _poll_input)
 
-        # ═══════════════════════════════════════════════════════════
-        # Server-side zoom handlers driven by the client JS
-        # ═══════════════════════════════════════════════════════════
         def _on_zoom_delta(e):
             try:
                 d = float((e.args or {}).get("delta", 0))
@@ -935,14 +910,13 @@ def render():
         ui.on("dpr_zoom_delta", _on_zoom_delta)
         ui.on("dpr_zoom_mult",  _on_zoom_mult)
 
-        # Wire the search input's value changes
         try:
             refs["search_input"].on_value_change(_on_input)
         except Exception:
             pass
 
         # ═══════════════════════════════════════════════════════════
-        # Initial render + zoom
+        # Initial render
         # ═══════════════════════════════════════════════════════════
         map_view()
         _apply_zoom(1.0)
