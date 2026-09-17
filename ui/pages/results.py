@@ -1,8 +1,9 @@
-"""Results — report dashboard with right-side project details drawer."""
+"""Results — report dashboard with left drawer + Summary tab."""
 from __future__ import annotations
 
 import base64
 import re
+from html import escape
 
 from nicegui import ui, run
 
@@ -11,6 +12,7 @@ from core import quality as Q
 from core import risk as RISK
 from core import production as PROD
 from core import history as HIST
+from core import summary as SUM
 from core.db import update_report_payload
 from ui import state
 from ui.shell import page_shell
@@ -30,15 +32,15 @@ from ui.components import (
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Page CSS — drawer, header, tabs
+# Page CSS
 # ═══════════════════════════════════════════════════════════════════════════
 _REPORT_CSS = """
 <style>
-/* ── Floating toggle button (fixed, top-right, below topbar) ──────── */
+/* ── Floating toggle (left side, below topbar) ─────────────────── */
 .dpr-drawer-toggle {
   position: fixed;
   top: 62px;
-  right: 16px;
+  left: 16px;
   z-index: 45;
   width: 38px;
   height: 38px;
@@ -54,32 +56,27 @@ _REPORT_CSS = """
   line-height: 1;
   padding: 0;
   box-shadow: 0 2px 14px rgba(0,0,0,0.55);
-  transition: border-color .15s ease, background .15s ease;
 }
 .dpr-drawer-toggle:hover {
   border-color: rgba(34,197,94,0.85);
   background: rgba(34,197,94,0.06);
 }
-.dpr-drawer-toggle .dpr-drawer-toggle-label {
-  margin-left: 6px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+@media (min-width: 820px) {
+  .dpr-drawer-toggle { left: 248px; }
 }
 
-/* ── Drawer (slides in from right) ────────────────────────────────── */
+/* ── Drawer (slides in from LEFT) ──────────────────────────────── */
 .dpr-drawer {
   position: fixed;
   top: 0;
-  right: 0;
+  left: 0;
   height: 100vh;
   width: 340px;
   max-width: 92vw;
   background: linear-gradient(180deg, #0c0c0f 0%, #06060a 100%);
-  border-left: 1px solid rgba(34,197,94,0.28);
-  box-shadow: -10px 0 40px rgba(0,0,0,0.7);
-  transform: translateX(105%);
+  border-right: 1px solid rgba(34,197,94,0.28);
+  box-shadow: 10px 0 40px rgba(0,0,0,0.7);
+  transform: translateX(-105%);
   transition: transform .22s ease;
   z-index: 70;
   overflow-y: auto;
@@ -88,7 +85,6 @@ _REPORT_CSS = """
 }
 .dpr-drawer.open { transform: translateX(0); }
 
-/* ── Backdrop (dim, click to close) ───────────────────────────────── */
 .dpr-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -104,7 +100,6 @@ _REPORT_CSS = """
   pointer-events: auto;
 }
 
-/* ── Drawer header ────────────────────────────────────────────────── */
 .dpr-drawer-head {
   display: flex;
   align-items: center;
@@ -142,7 +137,55 @@ _REPORT_CSS = """
   border-color: rgba(34,197,94,0.7);
 }
 
-/* ── Project fields ───────────────────────────────────────────────── */
+/* ── Force visible text inside the drawer ──────────────────────── */
+.dpr-drawer .q-field__native,
+.dpr-drawer .q-field__native input,
+.dpr-drawer .q-field__native textarea,
+.dpr-drawer .q-field__input,
+.dpr-drawer input.q-field__native,
+.dpr-drawer textarea.q-field__native,
+.dpr-drawer input,
+.dpr-drawer textarea {
+  color: #e8e8ea !important;
+  caret-color: #22c55e !important;
+  -webkit-text-fill-color: #e8e8ea !important;
+  font-size: 12.5px !important;
+}
+.dpr-drawer .q-field__native::placeholder,
+.dpr-drawer .q-field__native::-webkit-input-placeholder,
+.dpr-drawer input::placeholder,
+.dpr-drawer textarea::placeholder {
+  color: #4f4f56 !important;
+  -webkit-text-fill-color: #4f4f56 !important;
+}
+.dpr-drawer .q-field__label,
+.dpr-drawer .q-field__label *,
+.dpr-drawer .q-field__bottom,
+.dpr-drawer .q-field__messages {
+  color: #85858c !important;
+}
+.dpr-drawer .q-field__control {
+  background: #121216 !important;
+}
+.dpr-drawer .q-field__control:before,
+.dpr-drawer .q-field__control:after {
+  border-color: rgba(34,197,94,0.28) !important;
+}
+.dpr-drawer .q-field--focused .q-field__control:after {
+  border-color: #22c55e !important;
+}
+.dpr-drawer .q-uploader {
+  background: #121216 !important;
+  border-color: rgba(34,197,94,0.28) !important;
+}
+.dpr-drawer .q-uploader__header,
+.dpr-drawer .q-uploader__title,
+.dpr-drawer .q-uploader__subtitle {
+  color: #85858c !important;
+  background: transparent !important;
+  font-size: 11px !important;
+}
+
 .dpr-proj-logo {
   width: 100%;
   max-height: 80px;
@@ -165,7 +208,7 @@ _REPORT_CSS = """
   margin-bottom: 4px;
 }
 
-/* ── Report header (in main flow) ─────────────────────────────────── */
+/* ── Main content ──────────────────────────────────────────────── */
 .dpr-report-main {
   display: flex;
   flex-direction: column;
@@ -225,7 +268,6 @@ _REPORT_CSS = """
   font-weight: 600 !important;
 }
 
-/* ── Compact tabs ─────────────────────────────────────────────────── */
 .dpr-tabs .q-tab {
   min-height: 34px !important;
   padding: 0 10px !important;
@@ -236,6 +278,44 @@ _REPORT_CSS = """
 }
 .dpr-tabs .q-tab__label { font-size: 11.5px !important; }
 .dpr-tabs .q-tab__icon { font-size: 16px !important; }
+
+/* ── Summary tab styling ──────────────────────────────────────── */
+.dpr-sum-card {
+  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
+  border: 1px solid rgba(34,197,94,0.20);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+}
+.dpr-sum-title {
+  color: #22c55e;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+.dpr-sum-table { width: 100%; border-collapse: collapse; }
+.dpr-sum-table th {
+  text-align: left;
+  padding: 7px 10px;
+  color: #85858c;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(34,197,94,0.15);
+}
+.dpr-sum-table th.num { text-align: right; }
+.dpr-sum-table td {
+  padding: 7px 10px;
+  color: #e8e8ea;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(34,197,94,0.06);
+}
+.dpr-sum-table td.num { text-align: right; color: #c8c8cc; font-size: 11.5px; }
+.dpr-sum-table td.crew { text-align: right; color: #22c55e; font-weight: 700; font-size: 12px; }
+.dpr-sum-table td.pct { color: #4f4f56; font-size: 10px; margin-left: 6px; }
 </style>
 """
 
@@ -298,7 +378,7 @@ def _download_row():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Project details <-> report sync
+# Sync helpers
 # ═══════════════════════════════════════════════════════════════════════════
 _MIRROR_TO_REPORT = {
     "project_name": "project_name",
@@ -359,7 +439,7 @@ def _on_field_changed(key: str, value: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Drawer content (project details)
+# Project details drawer body
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_project_details_body() -> None:
     pd = state.project_details()
@@ -503,6 +583,153 @@ def _render_report_header(rpt, on_reconcile, on_targets):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Summary tab — decision-making view
+# ═══════════════════════════════════════════════════════════════════════════
+def _summary_tab(rpt):
+    s = SUM.compute(rpt)
+
+    colors = {
+        "on_track": ("#22c55e", "rgba(34,197,94,0.10)", "rgba(34,197,94,0.35)"),
+        "attention": ("#ffb020", "rgba(255,176,32,0.10)", "rgba(255,176,32,0.35)"),
+        "at_risk": ("#ff4d6a", "rgba(255,77,106,0.10)", "rgba(255,77,106,0.35)"),
+    }
+    fg, bg, border = colors.get(s["status"], colors["on_track"])
+
+    # ── Status banner ────────────────────────────────────────────────
+    ui.html(
+        f'<div style="background:{bg};border:1px solid {border};'
+        f'border-left:4px solid {fg};border-radius:12px;'
+        f'padding:16px 20px;margin-bottom:14px;">'
+        f'  <div style="display:flex;align-items:center;gap:12px;'
+        f'      flex-wrap:wrap;">'
+        f'    <span style="background:{fg};color:#050506;padding:4px 12px;'
+        f'        border-radius:999px;font-size:11px;font-weight:800;'
+        f'        letter-spacing:0.1em;">{s["status_label"]}</span>'
+        f'    <span style="color:#e8e8ea;font-size:13px;font-weight:600;">'
+        f'      Project status</span>'
+        f'  </div>'
+        f'  <div style="color:#c8c8cc;font-size:12px;line-height:1.55;'
+        f'      margin-top:10px;">{escape(s["status_detail"])}</div>'
+        f'</div>'
+    )
+
+    # ── Executive summary ────────────────────────────────────────────
+    ui.html(
+        f'<div class="dpr-sum-card">'
+        f'  <div class="dpr-sum-title">Executive summary</div>'
+        f'  <div style="color:#e8e8ea;font-size:12.5px;line-height:1.6;">'
+        f'    {escape(s["exec_summary"])}'
+        f'  </div>'
+        f'</div>'
+    )
+
+    # ── Grand totals ─────────────────────────────────────────────────
+    stat_grid([
+        {"label": "Total Crew", "value": A.fmt_count(s["total_crew"]),
+         "sub": f"{s['skilled']} skilled · {s['helpers']} helpers",
+         "tone": "primary"},
+        {"label": "Work Rows", "value": s["total_rows"],
+         "sub": f"{s['total_buildings']} buildings · "
+                f"{s['total_activities']} activities"},
+        {"label": "Avg Progress", "value": f"{s['avg_progress']:.0f}%",
+         "sub": "across reported rows"},
+        {"label": "Quality Grade", "value": s["quality"].grade,
+         "sub": f"score {s['quality'].score}/100",
+         "tone": s["grade_tone"]},
+    ])
+
+    # ── Crew distribution by building ────────────────────────────────
+    if s["buildings"]:
+        rows = ""
+        for b in s["buildings"]:
+            rows += (
+                f'<tr>'
+                f'<td>Building {escape(str(b["building"]))}</td>'
+                f'<td class="num">{b["floors"]}</td>'
+                f'<td class="num">{b["activities"]}</td>'
+                f'<td>{escape(str(b["top_activity"]))}</td>'
+                f'<td class="crew">{b["crew"]}</td>'
+                f'</tr>'
+            )
+        ui.html(
+            f'<div class="dpr-sum-card">'
+            f'  <div class="dpr-sum-title">Crew distribution by building</div>'
+            f'  <div style="overflow-x:auto;">'
+            f'  <table class="dpr-sum-table">'
+            f'    <thead><tr>'
+            f'      <th>Building</th>'
+            f'      <th class="num">Floors</th>'
+            f'      <th class="num">Activities</th>'
+            f'      <th>Top activity</th>'
+            f'      <th class="num">Crew</th>'
+            f'    </tr></thead>'
+            f'    <tbody>{rows}</tbody>'
+            f'  </table></div>'
+            f'</div>'
+        )
+
+    # ── Activity breakdown ───────────────────────────────────────────
+    if s["activities"]:
+        total_crew = s["total_crew"] or 1
+        rows = ""
+        for a in s["activities"]:
+            pct = a["crew"] / total_crew * 100
+            rows += (
+                f'<tr>'
+                f'<td>{escape(str(a["activity"]))}</td>'
+                f'<td class="num">{a["buildings"]}</td>'
+                f'<td class="num">{a["rows"]}</td>'
+                f'<td class="crew">{a["crew"]}'
+                f'  <span class="pct">{pct:.0f}%</span></td>'
+                f'</tr>'
+            )
+        ui.html(
+            f'<div class="dpr-sum-card">'
+            f'  <div class="dpr-sum-title">Activity breakdown</div>'
+            f'  <div style="overflow-x:auto;">'
+            f'  <table class="dpr-sum-table">'
+            f'    <thead><tr>'
+            f'      <th>Activity</th>'
+            f'      <th class="num">Buildings</th>'
+            f'      <th class="num">Rows</th>'
+            f'      <th class="num">Crew</th>'
+            f'    </tr></thead>'
+            f'    <tbody>{rows}</tbody>'
+            f'  </table></div>'
+            f'</div>'
+        )
+
+    # ── Decision flags ───────────────────────────────────────────────
+    if s["flags"]:
+        flags_html = "".join(
+            f'<div style="display:flex;align-items:flex-start;gap:10px;'
+            f'padding:9px 0;border-bottom:1px solid rgba(34,197,94,0.08);">'
+            f'  <span style="color:#ffb020;font-size:13px;'
+            f'      font-weight:700;line-height:1.2;">⚠</span>'
+            f'  <span style="color:#c8c8cc;font-size:12px;'
+            f'      line-height:1.55;">{escape(f)}</span>'
+            f'</div>'
+            for f in s["flags"]
+        )
+        ui.html(
+            f'<div class="dpr-sum-card">'
+            f'  <div class="dpr-sum-title">Decision flags</div>'
+            f'  {flags_html}'
+            f'</div>'
+        )
+    else:
+        ui.html(
+            f'<div class="dpr-sum-card">'
+            f'  <div class="dpr-sum-title">Decision flags</div>'
+            f'  <div style="color:#22c55e;font-size:12px;'
+            f'      line-height:1.55;">'
+            f'    No flags raised. Data is clean and consistent across '
+            f'    sources.</div>'
+            f'</div>'
+        )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Risk section
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_risk_section():
@@ -549,7 +776,7 @@ def _render_risk_section():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Production / S-curve
+# Production panel
 # ═══════════════════════════════════════════════════════════════════════════
 _TARGETS_OPENER: dict = {"fn": lambda: None}
 
@@ -851,7 +1078,7 @@ def render():
 
         _hydrate_session_from_report()
 
-        # ── Drawer + backdrop + toggle (all fixed-position, no scroll) ──
+        # ── Drawer + backdrop + toggle ──────────────────────────────
         backdrop = ui.element("div").classes("dpr-drawer-backdrop")
 
         drawer = ui.element("div").classes("dpr-drawer")
@@ -867,7 +1094,6 @@ def render():
         with toggle_btn:
             toggle_icon = ui.html("☰")
 
-        # ── Drawer open/close ────────────────────────────────────────
         drawer_state = {"open": False}
 
         def _open_drawer():
@@ -892,7 +1118,7 @@ def render():
         close_btn.on("click", _close_drawer)
         backdrop.on("click", _close_drawer)
 
-        # ── Main content (full width) ────────────────────────────────
+        # ── Main content ────────────────────────────────────────────
         with ui.element("div").classes("dpr-report-main"):
             def _open_reconcile():
                 ui.navigate.to("/reconcile")
@@ -903,47 +1129,27 @@ def render():
             _render_report_header(rpt, _open_reconcile, _open_targets)
             _download_row()
 
-            mp = A.manpower(rpt)
-            act = A.activities(rpt)
-            prog = A.progress(rpt)
-            q = Q.compute_quality(rpt)
-
-            grade_tone = (
-                "primary" if q.grade in ("A", "B")
-                else "warning" if q.grade == "C"
-                else "danger"
-            )
-            stat_grid([
-                {"label": "Quality", "value": q.grade,
-                 "sub": f"score {q.score}/100", "tone": grade_tone},
-                {"label": "Work rows", "value": len(rpt.work_progress),
-                 "sub": f"{A.fmt_count(mp.buildings_with_crew)} building(s) · "
-                        f"{act.distinct} activities"},
-                {"label": "Manpower", "value": A.fmt_count(mp.total),
-                 "sub": f"{mp.skilled} skilled · {mp.helpers} helpers"},
-                {"label": "Avg progress",
-                 "value": A.fmt_pct(prog.avg_pct) if prog.reported else "—",
-                 "sub": (f"{prog.reported}/{prog.total_rows} reported"
-                         if prog.reported else "none reported")},
-            ])
-
-            _render_risk_section()
-            _render_production_panel(rpt)
-
             with ui.tabs().classes("w-full dpr-tabs").props("align=left") as tabs:
+                ui.tab("Summary",  icon="insights")
                 ui.tab("Overview", icon="dashboard")
                 ui.tab("Layout",   icon="grid_view")
                 ui.tab("Quality",  icon="verified")
                 ui.tab("Detailed", icon="table_view")
 
-            with ui.tab_panels(tabs, value="Overview").classes(
+            with ui.tab_panels(tabs, value="Summary").classes(
                 "w-full"
             ).style("background: transparent; padding: 0;"):
+                with ui.tab_panel("Summary").style("padding: 12px 0 0 0;"):
+                    _summary_tab(rpt)
                 with ui.tab_panel("Overview").style("padding: 12px 0 0 0;"):
+                    mp = A.manpower(rpt)
+                    act = A.activities(rpt)
+                    prog = A.progress(rpt)
                     _overview_tab(rpt, mp, act, prog)
                 with ui.tab_panel("Layout").style("padding: 12px 0 0 0;"):
                     _layout_tab(rpt)
                 with ui.tab_panel("Quality").style("padding: 12px 0 0 0;"):
+                    q = Q.compute_quality(rpt)
                     _quality_tab(rpt, q)
                 with ui.tab_panel("Detailed").style("padding: 12px 0 0 0;"):
                     _detailed_tab(rpt)
