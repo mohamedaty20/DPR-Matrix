@@ -1,14 +1,19 @@
-/* DPR-Matrix — global styles. Loaded by ui/theme.py */
+/* DPR-Matrix — global fallback styles.
+   Loaded via app.add_static_files("/assets", "assets").
+   Colour palette matches the live theme (Caterpillar dark orange).
+   No greens. Ever. */
+
 html, body {
-  background: #000000;
-  color: #ffffff;
+  background: #050506;
+  color: #e8e8ea;
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+  -webkit-font-smoothing: antialiased;
 }
 
-h1, h2, h3, h4 { color: #00FF66; font-weight: 700; }
+h1, h2, h3, h4 { color: #F2740C; font-weight: 700; }
 
-a { color: #00FF66; text-decoration: none; }
-a:hover { text-decoration: underline; }
+a { color: #F2740C; text-decoration: none; }
+a:hover { text-decoration: underline; color: #C75A00; }
 
-table, td, th { color: #ffffff; border-color: #1f3f1f; }
-thead th { color: #00FF66; font-weight: 700; }
+table, td, th { color: #e8e8ea; border-color: rgba(242, 116, 12, 0.20); }
+thead th { color: #F2740C; font-weight: 700; }
