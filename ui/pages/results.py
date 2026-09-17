@@ -32,7 +32,11 @@ from ui.components import (
 _REPORT_CSS = """
 <style>
 /* ── Report Dashboard title larger + centered ──────────────────── */
-.dpr-page-header { align-items: center !important; text-align: center !important; }
+.dpr-page-header {
+  align-items: center !important;
+  text-align: center !important;
+  padding-bottom: 0 !important;
+}
 .dpr-page-title {
   font-size: clamp(22px, 3.6vw, 30px) !important;
   text-align: center !important;
@@ -41,6 +45,13 @@ _REPORT_CSS = """
   text-align: center !important;
   margin-left: auto !important;
   margin-right: auto !important;
+}
+
+/* ── Pull the whole page up tight under the title ───────────────── */
+.dpr-page-body {
+  padding-top: 4px !important;
+  padding-bottom: 24px !important;
+  gap: 10px !important;
 }
 
 /* ── Drawer toggle ────────────────────────────────────────────── */
@@ -149,22 +160,17 @@ _REPORT_CSS = """
 .dpr-drawer .q-field__native,
 .dpr-drawer .q-field__native input,
 .dpr-drawer input, .dpr-drawer textarea,
-.dpr-report-header .q-field__native,
-.dpr-report-header .q-field__native input,
-.dpr-report-header input, .dpr-report-header textarea,
 input.q-field__native, textarea.q-field__native {
   color: #e8e8ea !important;
   -webkit-text-fill-color: #e8e8ea !important;
   caret-color: #F2740C !important;
   font-size: 12.5px !important;
 }
-.dpr-drawer input::placeholder,
-.dpr-report-header input::placeholder {
+.dpr-drawer input::placeholder {
   color: #4f4f56 !important;
   -webkit-text-fill-color: #4f4f56 !important;
 }
-.dpr-drawer .q-field__control,
-.dpr-report-header .q-field__control {
+.dpr-drawer .q-field__control {
   background: #121216 !important;
 }
 .dpr-drawer .q-uploader {
@@ -193,37 +199,24 @@ input.q-field__native, textarea.q-field__native {
   display: block;
   margin-bottom: 4px;
 }
+.dpr-drawer-section {
+  color: #85858c;
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin: 14px 0 8px 0;
+  padding-top: 12px;
+  border-top: 1px solid rgba(242,116,12,0.14);
+}
 
 .dpr-report-main {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   min-width: 0;
   width: 100%;
 }
-.dpr-report-header {
-  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
-  border: 1px solid rgba(242,116,12,0.20);
-  border-radius: 12px;
-  padding: 14px 16px;
-}
-.dpr-report-header-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  align-items: end;
-}
-@media (max-width: 640px) {
-  .dpr-report-header-grid { grid-template-columns: 1fr; }
-}
-.dpr-report-source-note {
-  color: #85858c;
-  font-size: 11px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(242,116,12,0.10);
-}
-.dpr-report-source-note b { color: #e8e8ea; font-weight: 600; }
 
 /* ── Download block ────────────────────────────────────────────── */
 .dpr-download-heading {
@@ -253,13 +246,7 @@ input.q-field__native, textarea.q-field__native {
   background: rgba(242,116,12,0.04) !important;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   FIX: Tabs row layout. The Zones board button was floating on top
-   of the tab strip because the tabs container wasn't being
-   constrained. Now the row is a grid: tabs get 1fr (scrollable),
-   button gets auto (fixed width). On very narrow screens the button
-   wraps to its own line instead of overlapping.
-   ═══════════════════════════════════════════════════════════════ */
+/* ── Tabs row (Zones button beside the tabs) ───────────────────── */
 .dpr-tabs-row {
   display: grid !important;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -306,22 +293,11 @@ input.q-field__native, textarea.q-field__native {
   color: #F2740C !important;
 }
 @media (max-width: 520px) {
-  .dpr-tabs-row {
-    grid-template-columns: 1fr;
-  }
-  .dpr-zones-tab.q-btn {
-    justify-self: start;
-  }
+  .dpr-tabs-row { grid-template-columns: 1fr; }
+  .dpr-zones-tab.q-btn { justify-self: start; }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   FIX: Building × Activity Matrix column headers.
-   The activity name is on line 1; "working floors" is on line 2
-   under it. The base theme forces `white-space: nowrap` on the
-   header cell — we override that here and use flex to stack the
-   two lines cleanly. Columns have a fixed width so the grid
-   overflows and the parent scrolls horizontally on mobile.
-   ═══════════════════════════════════════════════════════════════ */
+/* ── Matrix header two-line layout ─────────────────────────────── */
 .dpr-matrix {
   display: grid;
   gap: 2px;
@@ -429,6 +405,7 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-bldg-link:hover { color: #ffb020; border-bottom-color: #ffb020; }
 
+/* ── Decision flag cards ──────────────────────────────────────── */
 .dpr-flag-card {
   display: flex;
   align-items: center;
@@ -653,7 +630,11 @@ def _persist_and_reload(rpt, message: str = "Saved") -> None:
         ui.notify(f"Save failed: {ex}", color="red", position="top")
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Project details drawer — Date + Prepared By moved here
+# ═══════════════════════════════════════════════════════════════════════════
 def _render_project_details_body() -> None:
+    rpt = state.report()
     pd = state.project_details()
 
     def _field(key: str, label: str, placeholder: str = "") -> None:
@@ -665,6 +646,43 @@ def _render_project_details_body() -> None:
                 on_change=lambda e, k=key: _on_field_changed(k, e.value or ""),
             ).props("dense outlined").classes("w-full")
 
+    # ── Report-level fields — moved from the removed Report Header card ──
+    if rpt is not None:
+        ui.html('<div class="dpr-drawer-section">Report info</div>')
+
+        # Small source-file count line
+        n_src = len(rpt.source_files or [])
+        ui.html(
+            f'<div style="color:#85858c;font-size:10.5px;'
+            f'letter-spacing:0.04em;margin-bottom:10px;">'
+            f'<b style="color:#e8e8ea;font-weight:600;">{n_src}</b> '
+            f'source file(s)'
+            f'</div>'
+        )
+
+        def _on_date(e):
+            rpt.report_date = e.value or ""
+        def _on_prep(e):
+            rpt.prepared_by = e.value or ""
+
+        with ui.element("div").classes("dpr-proj-field"):
+            ui.label("Report date").classes("dpr-proj-label")
+            ui.input(
+                value=rpt.report_date or "",
+                placeholder="YYYY-MM-DD",
+                on_change=_on_date,
+            ).props("dense outlined").classes("w-full")
+
+        with ui.element("div").classes("dpr-proj-field"):
+            ui.label("Prepared by").classes("dpr-proj-label")
+            ui.input(
+                value=rpt.prepared_by or "",
+                placeholder="Your name",
+                on_change=_on_prep,
+            ).props("dense outlined").classes("w-full")
+
+    # ── Project meta fields ─────────────────────────────────────────
+    ui.html('<div class="dpr-drawer-section">Project details</div>')
     _field("project_name", "Project name", "e.g. WTG Foundation Package")
     _field("location",     "Location",     "e.g. Ras Ghareb, Zone B")
     _field("company_name", "Company name", "e.g. Orascom Construction")
@@ -672,11 +690,8 @@ def _render_project_details_body() -> None:
     _field("consultant",   "Consultant",   "e.g. Dar Al-Handasah")
     _field("shift",        "Shift",        "e.g. Day")
 
-    ui.html(
-        '<div style="margin-top:14px;padding-top:12px;'
-        'border-top:1px solid rgba(242,116,12,0.14);"></div>'
-    )
-    ui.label("Company logo").classes("dpr-proj-label")
+    # ── Company logo (at the bottom) ────────────────────────────────
+    ui.html('<div class="dpr-drawer-section">Company logo</div>')
 
     logo = state.get_project_logo()
     if logo:
@@ -743,38 +758,6 @@ def _render_project_details_body() -> None:
     ui.button("Save details", on_click=_save_details).classes(
         "dpr-btn-primary dpr-btn-xs w-full"
     ).style("margin-top: 12px;")
-
-
-def _render_report_header(rpt) -> None:
-    with ui.element("div").classes("dpr-report-header"):
-        ui.html('<div style="color:#F2740C;font-size:10.5px;'
-                'letter-spacing:0.14em;text-transform:uppercase;'
-                'font-weight:700;margin-bottom:10px;">Report header</div>')
-        with ui.element("div").classes("dpr-report-header-grid"):
-            with ui.element("div"):
-                ui.label("Date").classes("dpr-proj-label")
-                def _on_date(e):
-                    rpt.report_date = e.value or ""
-                ui.input(
-                    value=rpt.report_date or "",
-                    placeholder="YYYY-MM-DD",
-                    on_change=_on_date,
-                ).props("dense outlined").classes("w-full")
-            with ui.element("div"):
-                ui.label("Prepared by").classes("dpr-proj-label")
-                def _on_prep(e):
-                    rpt.prepared_by = e.value or ""
-                ui.input(
-                    value=rpt.prepared_by or "",
-                    placeholder="Your name",
-                    on_change=_on_prep,
-                ).props("dense outlined").classes("w-full")
-
-        ui.html(
-            f'<div class="dpr-report-source-note">'
-            f'<b>{len(rpt.source_files)}</b> source file(s)'
-            f'</div>'
-        )
 
 
 def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
@@ -1583,7 +1566,10 @@ def render():
         backdrop.on("click", _close_drawer)
 
         with ui.element("div").classes("dpr-report-main"):
-            _render_report_header(rpt)
+            # NOTE: the Report Header card (Date + Prepared By + source
+            # count) was removed here. Those fields now live in the left
+            # Project Details drawer.
+
             _download_row()
 
             with ui.element("div").classes("dpr-tabs-row"):
