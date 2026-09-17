@@ -1,7 +1,18 @@
-"""Site Map — interactive matplotlib scatter with search + zoom."""
+"""Site Map — interactive matplotlib scatter with search + zoom + pan.
+
+Item 24 rebuild:
+  - Search bar works: robust matching (100 / B100 / bldg 100 / whitespace),
+    debounced, plus a fallback Search button, plus auto-scroll to match.
+  - Scroll-wheel zoom (laptop) and pinch zoom (mobile) via client events.
+  - Hotspots enlarged to a real tap target (40 px), click-to-select works,
+    click on backdrop / same dot deselects, different dot switches.
+  - Zoom state is Python-owned and re-applied after every map refresh.
+"""
 from __future__ import annotations
 
 import base64
+import re
+import time
 from collections import Counter
 
 from nicegui import ui
@@ -139,10 +150,26 @@ _ZONES_CSS = """
 <style>
 /* ── Toolbar ───────────────────────────────────────────────────── */
 .dpr-toolbar {
-  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-  margin-bottom: 8px;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin-bottom: 6px;
 }
-.dpr-search-wrap { flex: 1; min-width: 220px; }
+.dpr-search-wrap {
+  flex: 1; min-width: 200px;
+}
+.dpr-search-btn.q-btn {
+  min-height: 32px !important; height: 32px !important;
+  padding: 0 14px !important; font-size: 11.5px !important;
+  font-weight: 700 !important;
+  border: 1px solid rgba(242,116,12,0.42) !important;
+  color: #F2740C !important;
+  background: transparent !important;
+  border-radius: 8px !important;
+  letter-spacing: 0.05em;
+}
+.dpr-search-btn.q-btn:hover {
+  background: rgba(242,116,12,0.08) !important;
+  border-color: #F2740C !important;
+}
 .dpr-zoom-group {
   display: inline-flex;
   background: #0c0c0f;
@@ -164,7 +191,10 @@ _ZONES_CSS = """
   font-weight: 700 !important;
 }
 .dpr-zoom-btn.q-btn:last-child { border-right: none !important; }
-.dpr-zoom-btn.q-btn:hover { color: #F2740C !important; background: rgba(242,116,12,0.06) !important; }
+.dpr-zoom-btn.q-btn:hover {
+  color: #F2740C !important;
+  background: rgba(242,116,12,0.06) !important;
+}
 .dpr-zoom-btn.q-btn.dpr-zoom-active {
   background: rgba(242,116,12,0.16) !important;
   color: #F2740C !important;
@@ -181,12 +211,25 @@ _ZONES_CSS = """
 }
 .dpr-search-status {
   font-size: 11px; color: #85858c;
-  padding: 2px 2px 8px 2px; min-height: 18px;
+  padding: 2px 2px 6px 2px; min-height: 18px;
 }
 .dpr-search-status b { color: #F2740C; }
 .dpr-search-status.err { color: #ff4d6a; }
+.dpr-zoom-hint {
+  font-size: 10px; color: #4f4f56;
+  padding: 0 2px 8px 2px; letter-spacing: 0.02em;
+}
+.dpr-zoom-hint kbd {
+  background: rgba(242,116,12,0.10);
+  color: #85858c;
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  border: 1px solid rgba(242,116,12,0.20);
+}
 
-/* ── Viewport (scrolling container) ────────────────────────────── */
+/* ── Viewport (scrollable map container) ──────────────────────── */
 .dpr-viewport {
   width: 100%;
   max-height: 72vh;
@@ -196,11 +239,13 @@ _ZONES_CSS = """
   background: #08080a;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y;
+  position: relative;
 }
 .dpr-canvas {
   position: relative;
   width: 100%;
-  transition: width .18s ease;
+  transition: width .15s ease;
+  min-height: 200px;
 }
 .dpr-canvas img.dpr-scatter-img {
   display: block;
@@ -211,10 +256,10 @@ _ZONES_CSS = """
   -webkit-user-drag: none;
 }
 
-/* ── Hotspots ──────────────────────────────────────────────────── */
+/* ── Hotspots — larger tap targets (item 24) ──────────────────── */
 .dpr-hotspot {
   position: absolute;
-  width: 30px; height: 30px;
+  width: 40px; height: 40px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   cursor: pointer;
@@ -225,21 +270,25 @@ _ZONES_CSS = """
   -webkit-tap-highlight-color: transparent;
 }
 .dpr-hotspot:hover {
-  background: rgba(242,116,12,0.10);
-  border-color: rgba(242,116,12,0.5);
+  background: rgba(242,116,12,0.14);
+  border-color: rgba(242,116,12,0.65);
 }
 .dpr-hotspot.selected {
-  background: rgba(242,116,12,0.16);
+  background: rgba(242,116,12,0.18);
   border-color: #F2740C;
-  box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
-              0 0 22px rgba(242,116,12,0.55);
+  box-shadow: 0 0 0 3px rgba(242,116,12,0.28),
+              0 0 24px rgba(242,116,12,0.55);
   animation: dpr-hs-pulse 1.8s ease-in-out infinite;
 }
 @keyframes dpr-hs-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
-                        0 0 22px rgba(242,116,12,0.55); }
-  50%      { box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
-                        0 0 32px rgba(242,116,12,0.8); }
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(242,116,12,0.28),
+                0 0 24px rgba(242,116,12,0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(242,116,12,0.28),
+                0 0 34px rgba(242,116,12,0.85);
+  }
 }
 
 /* ── Detail panel ─────────────────────────────────────────────── */
@@ -294,7 +343,7 @@ _ZONES_CSS = """
 .dpr-sel-val.orange { color: #F2740C; }
 .dpr-sel-val.warn   { color: #ffb020; }
 .dpr-sel-val.risk   { color: #ff4d6a; }
-.dpr-sel-val.ok     { color: #0a8a3b; }
+.dpr-sel-val.ok     { color: #F2740C; }
 .dpr-sel-prog {
   height: 6px; background: rgba(255,255,255,0.05);
   border-radius: 999px; overflow: hidden; margin: 6px 0 4px 0;
@@ -336,9 +385,74 @@ _ZONES_CSS = """
 }
 .dpr-pts-list li.warn:before { color: #ffb020; content: "⚠"; }
 .dpr-pts-list li.risk:before { color: #ff4d6a; content: "⚠"; }
-.dpr-pts-list li.ok:before   { color: #0a8a3b; content: "✓"; }
+.dpr-pts-list li.ok:before   { color: #F2740C; content: "✓"; }
 .dpr-pts-list b { color: #e8e8ea; font-weight: 700; }
 </style>
+"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Client-side JS for scroll-wheel + pinch zoom
+# ═══════════════════════════════════════════════════════════════════════════
+_ZOOM_JS = """
+<script>
+(function () {
+  function bindViewport() {
+    var vp = document.querySelector('.dpr-viewport');
+    if (!vp || vp.__dprZoomBound) return;
+    vp.__dprZoomBound = true;
+
+    // ── Scroll-wheel zoom (laptop / desktop) ─────────────────────
+    vp.addEventListener('wheel', function (e) {
+      // Require Ctrl/Cmd so a plain scroll can still pan the map.
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      var delta = e.deltaY < 0 ? 0.18 : -0.18;
+      if (typeof emitEvent === 'function') {
+        emitEvent('dpr_zoom_delta', {delta: delta});
+      }
+    }, {passive: false});
+
+    // ── Two-finger pinch zoom (mobile) ───────────────────────────
+    var lastDist = 0;
+    vp.addEventListener('touchstart', function (e) {
+      if (e.touches && e.touches.length === 2) {
+        lastDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+      }
+    }, {passive: true});
+    vp.addEventListener('touchmove', function (e) {
+      if (e.touches && e.touches.length === 2 && lastDist > 0) {
+        var dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        var ratio = dist / lastDist;
+        if (ratio > 1.08 || ratio < 0.92) {
+          if (typeof emitEvent === 'function') {
+            emitEvent('dpr_zoom_mult', {mult: ratio});
+          }
+          lastDist = dist;
+        }
+      }
+    }, {passive: true});
+    vp.addEventListener('touchend', function () {
+      lastDist = 0;
+    }, {passive: true});
+    vp.addEventListener('touchcancel', function () {
+      lastDist = 0;
+    }, {passive: true});
+  }
+
+  bindViewport();
+  // Re-bind after NiceGUI swaps DOM (page nav, refreshable updates).
+  new MutationObserver(bindViewport).observe(document.body, {
+    childList: true, subtree: true
+  });
+})();
+</script>
 """
 
 
@@ -436,7 +550,6 @@ def _build_points(zones, rpt) -> dict:
     )[:3]
     sorted_stage = sorted(zones, key=lambda z: _ORDER.get(z["stage"], 0))
     latest = sorted_stage[-1] if sorted_stage else None
-    earliest = sorted_stage[0] if sorted_stage else None
 
     stalled = [
         z for z in zones
@@ -515,6 +628,7 @@ def render():
         ),
     ):
         ui.add_head_html(_ZONES_CSS, shared=False)
+        ui.add_body_html(_ZOOM_JS)
 
         rpt = state.report()
         if rpt is None:
@@ -541,46 +655,65 @@ def render():
 
         W_PX, H_PX = 1600.0, 760.0
 
-        app_state = {
+        app_state: dict = {
             "highlight_id": None,
             "selection": None,
             "zoom": 1.0,
+            "hotspots": [],
         }
-        refs: dict = {"canvas": None, "zoom_btns": {}, "clear_btn": None}
+        refs: dict = {
+            "canvas": None,
+            "viewport": None,
+            "zoom_btns": {},
+            "clear_btn": None,
+            "search_input": None,
+            "search_status": None,
+        }
 
         # ═══════════════════════════════════════════════════════════
         # Toolbar
         # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-toolbar"):
             with ui.element("div").classes("dpr-search-wrap"):
-                search_input = ui.input(
-                    placeholder="Search building — type a number (e.g. 78)",
-                    on_change=lambda e: _on_search(e.value or ""),
+                refs["search_input"] = ui.input(
+                    placeholder="Search building — e.g. 78, B78, bldg 78",
                 ).props("dense outlined clearable").classes("w-full")
+
+            ui.button("Search",
+                      on_click=lambda: _do_search(
+                          (refs["search_input"].value or ""))).classes(
+                "dpr-search-btn")
 
             with ui.element("div").classes("dpr-zoom-group"):
                 for label, val in [("1×", 1.0), ("2×", 2.0),
                                     ("3×", 3.0), ("4×", 4.0)]:
                     b = ui.button(label,
-                                  on_click=lambda v=val: _set_zoom(v)) \
+                                  on_click=lambda v=val: _apply_zoom(v)) \
                         .classes("dpr-zoom-btn")
                     if val == 1.0:
                         b.classes(add="dpr-zoom-active")
                     refs["zoom_btns"][val] = b
 
             refs["clear_btn"] = ui.button(
-                "Clear", on_click=lambda: _clear_selection(),
+                "Clear", on_click=lambda: _clear(),
             ).classes("dpr-clear-btn")
             refs["clear_btn"].set_visibility(False)
 
-        search_status = ui.html("").classes("dpr-search-status")
+        refs["search_status"] = ui.html("").classes("dpr-search-status")
+
+        ui.html(
+            '<div class="dpr-zoom-hint">'
+            'Zoom: buttons · <kbd>Ctrl</kbd> + scroll on laptop · '
+            'two-finger pinch on mobile.'
+            '</div>'
+        )
 
         # ═══════════════════════════════════════════════════════════
-        # Map
+        # Map + side panel
         # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-map-wrap"):
-            viewport = ui.element("div").classes("dpr-viewport")
-            with viewport:
+            with ui.element("div").classes("dpr-viewport") as viewport:
+                refs["viewport"] = viewport
                 canvas = ui.element("div").classes("dpr-canvas")
             refs["canvas"] = canvas
 
@@ -590,6 +723,7 @@ def render():
                 png_bytes, hotspots = render_scatter(
                     zones, highlight_id=app_state["highlight_id"],
                 )
+                app_state["hotspots"] = hotspots
                 b64 = base64.b64encode(png_bytes).decode("ascii")
                 with canvas:
                     ui.html(
@@ -625,76 +759,94 @@ def render():
                 refs["clear_btn"].set_visibility(True)
 
         def _pick(z: dict):
-            if app_state["selection"] and app_state["selection"]["id"] == z["id"]:
-                # Second click → deselect
+            cur = app_state["selection"]
+            if cur is not None and cur["id"] == z["id"]:
                 app_state["selection"] = None
                 app_state["highlight_id"] = None
             else:
                 app_state["selection"] = z
                 app_state["highlight_id"] = z["id"]
+                _scroll_to(z)
             map_view.refresh()
             detail_panel.refresh()
             _refresh_clear_btn()
 
-        def _clear_selection():
+        def _clear():
             app_state["selection"] = None
             app_state["highlight_id"] = None
+            app_state["zoom"] = 1.0
+            _apply_zoom(1.0)
             map_view.refresh()
             detail_panel.refresh()
-            search_status.content = ""
+            refs["search_status"].content = ""
+            try:
+                refs["search_input"].value = ""
+            except Exception:
+                pass
             _refresh_clear_btn()
 
-        def _set_zoom(val: float):
+        def _apply_zoom(val: float):
+            try:
+                val = float(val)
+            except (TypeError, ValueError):
+                return
+            val = max(1.0, min(4.0, val))
             app_state["zoom"] = val
-            canvas.style(f"width: {int(val * 100)}%;")
+            try:
+                refs["canvas"].style(f"width: {int(val * 100)}%;")
+            except Exception:
+                pass
             for v, b in refs["zoom_btns"].items():
-                if v == val:
+                if abs(v - val) < 0.05:
                     b.classes(add="dpr-zoom-active")
                 else:
                     b.classes(remove="dpr-zoom-active")
 
-        def _on_search(q: str):
+        _PREFIX_RE = re.compile(
+            r'^(building|bldg|block|wtg|b)[\s\-_:\.]*',
+            re.IGNORECASE,
+        )
+
+        def _normalize_query(q: str) -> str:
             q = (q or "").strip().lower()
+            q = _PREFIX_RE.sub("", q)
+            return q.strip()
+
+        def _do_search(raw: str):
+            q = _normalize_query(raw)
 
             if not q:
                 app_state["highlight_id"] = None
                 app_state["selection"] = None
-                search_status.content = ""
+                refs["search_status"].content = ""
                 map_view.refresh()
                 detail_panel.refresh()
                 _refresh_clear_btn()
                 return
 
-            # 1. exact building or id match
             match = None
-            for z in zones:
-                b = str(z.get("building", "")).lower()
-                i = str(z.get("id", "")).lower()
-                if q == b or q == i:
-                    match = z
+            for tier in ("exact", "prefix", "substr"):
+                for z in zones:
+                    b = str(z.get("building", "")).lower()
+                    i = str(z.get("id", "")).lower()
+                    if tier == "exact" and (q == b or q == i):
+                        match = z
+                        break
+                    if tier == "prefix" and (b.startswith(q) or i.startswith(q)):
+                        match = z
+                        break
+                    if tier == "substr" and (q in b or q in i):
+                        match = z
+                        break
+                if match is not None:
                     break
-            # 2. prefix match
-            if match is None:
-                for z in zones:
-                    b = str(z.get("building", "")).lower()
-                    i = str(z.get("id", "")).lower()
-                    if b.startswith(q) or i.startswith(q):
-                        match = z
-                        break
-            # 3. substring match
-            if match is None:
-                for z in zones:
-                    b = str(z.get("building", "")).lower()
-                    i = str(z.get("id", "")).lower()
-                    if q in b or q in i:
-                        match = z
-                        break
 
             if match is None:
                 app_state["highlight_id"] = None
                 app_state["selection"] = None
-                search_status.content = (
-                    f'<span class="err">No building matches "{q}"</span>'
+                refs["search_status"].content = (
+                    f'<span class="err">No building matches '
+                    f'&quot;{raw}&quot;</span>'
                 )
                 map_view.refresh()
                 detail_panel.refresh()
@@ -703,18 +855,97 @@ def render():
 
             app_state["highlight_id"] = match["id"]
             app_state["selection"] = match
-            search_status.content = (
-                f'Highlighting <b>Building {match["building"] or match["id"]}</b>'
+            refs["search_status"].content = (
+                f'Highlighting <b>Building '
+                f'{match["building"] or match["id"]}</b>'
             )
             map_view.refresh()
             detail_panel.refresh()
             _refresh_clear_btn()
+            _scroll_to(match)
+
+        def _scroll_to(z: dict):
+            hs = next(
+                (h for h in app_state.get("hotspots", [])
+                 if h["zone"]["id"] == z["id"]),
+                None,
+            )
+            if hs is None:
+                return
+            x_px = float(hs["x_px"])
+            y_px = float(hs["y_px"])
+            try:
+                ui.run_javascript(f"""
+                    (function() {{
+                      var vp = document.querySelector('.dpr-viewport');
+                      var c  = document.querySelector('.dpr-canvas');
+                      if (!vp || !c) return;
+                      var cw = c.clientWidth  || vp.clientWidth;
+                      var ch = c.clientHeight || vp.clientHeight;
+                      var sx = (cw / {W_PX}) * {x_px};
+                      var sy = (ch / {H_PX}) * {y_px};
+                      var tx = Math.max(0, sx - vp.clientWidth  / 2);
+                      var ty = Math.max(0, sy - vp.clientHeight / 2);
+                      vp.scrollTo({{left: tx, top: ty, behavior: 'smooth'}});
+                    }})();
+                """)
+            except Exception:
+                pass
 
         # ═══════════════════════════════════════════════════════════
-        # Initial render
+        # Search debounce — 350 ms after last keystroke
+        # ═══════════════════════════════════════════════════════════
+        _last_input = {"t": 0.0, "v": "", "done": None}
+
+        def _on_input(e):
+            _last_input["t"] = time.monotonic()
+            _last_input["v"] = e.value or ""
+
+        def _poll_input():
+            t = _last_input["t"]
+            v = _last_input["v"]
+            if t == 0.0:
+                return
+            if v == _last_input.get("done"):
+                return
+            if time.monotonic() - t < 0.35:
+                return
+            _last_input["done"] = v
+            _do_search(v)
+
+        ui.timer(0.15, _poll_input)
+
+        # ═══════════════════════════════════════════════════════════
+        # Server-side zoom handlers driven by the client JS
+        # ═══════════════════════════════════════════════════════════
+        def _on_zoom_delta(e):
+            try:
+                d = float((e.args or {}).get("delta", 0))
+            except Exception:
+                return
+            _apply_zoom(app_state["zoom"] + d)
+
+        def _on_zoom_mult(e):
+            try:
+                m = float((e.args or {}).get("mult", 1.0))
+            except Exception:
+                return
+            _apply_zoom(app_state["zoom"] * m)
+
+        ui.on("dpr_zoom_delta", _on_zoom_delta)
+        ui.on("dpr_zoom_mult",  _on_zoom_mult)
+
+        # Wire the search input's value changes
+        try:
+            refs["search_input"].on_value_change(_on_input)
+        except Exception:
+            pass
+
+        # ═══════════════════════════════════════════════════════════
+        # Initial render + zoom
         # ═══════════════════════════════════════════════════════════
         map_view()
-        _set_zoom(1.0)   # apply default zoom to canvas
+        _apply_zoom(1.0)
 
         # ═══════════════════════════════════════════════════════════
         # Bullet summary
