@@ -1,8 +1,7 @@
-"""Site Map — interactive matplotlib scatter with live building details."""
+"""Site Map — interactive matplotlib scatter with search + zoom."""
 from __future__ import annotations
 
 import base64
-import io
 from collections import Counter
 
 from nicegui import ui
@@ -150,7 +149,110 @@ def _derive_zones(rpt) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════
 _ZONES_CSS = """
 <style>
-/* ── Map container ─────────────────────────────────────────────── */
+/* ── Search + zoom bar ─────────────────────────────────────────── */
+.dpr-map-toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.dpr-search-wrap {
+  flex: 1;
+  min-width: 220px;
+  position: relative;
+}
+.dpr-search-status {
+  font-size: 11px;
+  color: #85858c;
+  padding: 4px 2px 0 2px;
+  min-height: 16px;
+}
+.dpr-search-status b { color: #F2740C; }
+.dpr-search-status.err { color: #ff4d6a; }
+.dpr-zoom-group {
+  display: inline-flex;
+  background: #0c0c0f;
+  border: 1px solid rgba(242,116,12,0.28);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.dpr-zoom-btn {
+  background: transparent;
+  border: none;
+  color: #85858c;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 6px 12px;
+  cursor: pointer;
+  border-right: 1px solid rgba(242,116,12,0.15);
+}
+.dpr-zoom-btn:last-child { border-right: none; }
+.dpr-zoom-btn:hover { color: #F2740C; background: rgba(242,116,12,0.06); }
+.dpr-zoom-btn.active {
+  background: rgba(242,116,12,0.14);
+  color: #F2740C;
+}
+
+/* ── Scroll container ──────────────────────────────────────────── */
+.dpr-map-scroll {
+  width: 100%;
+  max-height: 72vh;
+  overflow: auto;
+  border: 1px solid rgba(242,116,12,0.28);
+  border-radius: 12px;
+  background: #08080a;
+  -webkit-overflow-scrolling: touch;
+}
+.dpr-map-scale {
+  position: relative;
+  width: 100%;
+  transition: width .15s ease;
+}
+.dpr-scatter-img {
+  width: 100%;
+  height: auto;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* ── Hotspots ──────────────────────────────────────────────────── */
+.dpr-hotspot {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  background: transparent;
+  border: 2px solid transparent;
+  z-index: 4;
+  transition: background-color .12s ease, border-color .12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.dpr-hotspot:hover {
+  background: rgba(242,116,12,0.10);
+  border-color: rgba(242,116,12,0.5);
+}
+.dpr-hotspot.selected {
+  background: rgba(242,116,12,0.16);
+  border-color: #F2740C;
+  box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
+              0 0 24px rgba(242,116,12,0.55);
+  animation: dpr-hs-pulse 1.8s ease-in-out infinite;
+}
+@keyframes dpr-hs-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
+                        0 0 24px rgba(242,116,12,0.55); }
+  50%      { box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
+                        0 0 32px rgba(242,116,12,0.8); }
+}
+
+/* ── Detail panel ──────────────────────────────────────────────── */
 .dpr-map-wrap {
   display: grid;
   grid-template-columns: 1fr 300px;
@@ -161,57 +263,6 @@ _ZONES_CSS = """
 @media (max-width: 960px) {
   .dpr-map-wrap { grid-template-columns: 1fr; }
 }
-.dpr-scatter-frame {
-  position: relative;
-  width: 100%;
-  border: 1px solid rgba(242,116,12,0.28);
-  border-radius: 12px;
-  overflow: hidden;
-  background: #08080a;
-  line-height: 0;
-}
-.dpr-scatter-img {
-  width: 100%;
-  height: auto;
-  display: block;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
-}
-
-/* ── Invisible clickable hotspots over each dot ─────────────────── */
-.dpr-hotspot {
-  position: absolute;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  cursor: pointer;
-  background: transparent;
-  border: 2px solid transparent;
-  transition: background-color .12s ease, border-color .12s ease;
-  z-index: 4;
-  -webkit-tap-highlight-color: transparent;
-}
-.dpr-hotspot:hover {
-  background: rgba(242,116,12,0.10);
-  border-color: rgba(242,116,12,0.45);
-}
-.dpr-hotspot.selected {
-  background: rgba(242,116,12,0.14);
-  border-color: #F2740C;
-  box-shadow: 0 0 0 2px rgba(242,116,12,0.28),
-              0 0 22px rgba(242,116,12,0.5);
-  animation: dpr-hotspot-pulse 1.8s ease-in-out infinite;
-}
-@keyframes dpr-hotspot-pulse {
-  0%, 100% { box-shadow: 0 0 0 2px rgba(242,116,12,0.28),
-                        0 0 22px rgba(242,116,12,0.5); }
-  50%      { box-shadow: 0 0 0 2px rgba(242,116,12,0.28),
-                        0 0 30px rgba(242,116,12,0.75); }
-}
-
-/* ── Detail panel ──────────────────────────────────────────────── */
 .dpr-sel-panel {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
   border: 1px solid rgba(242,116,12,0.28);
@@ -344,14 +395,14 @@ _ZONES_CSS = """
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Selected zone panel
+# Selected zone detail panel
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_selected(z: dict | None) -> None:
     if z is None:
         ui.html(
             '<div class="dpr-sel-empty">'
-            'Tap a point on the scatter map to see that building\'s '
-            'status, crew, and activities.'
+            'Tap a point on the scatter map — or search a building — '
+            'to see its status, crew, and activities.'
             '</div>'
         )
         return
@@ -393,7 +444,6 @@ def _render_selected(z: dict | None) -> None:
         f'</div>'
         f'<div class="dpr-sel-title">Building {z["building"] or z["id"]}</div>'
         f'<div class="dpr-sel-sub">Zone identifier: {z["id"]}</div>'
-
         f'<div class="dpr-sel-row">'
         f'  <span class="dpr-sel-key">Crew on site</span>'
         f'  <span class="dpr-sel-val orange">{z["crew"]}</span>'
@@ -424,7 +474,7 @@ def _render_selected(z: dict | None) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Bullet-point summary (short, decision-oriented)
+# Bullet summary
 # ═══════════════════════════════════════════════════════════════════════════
 def _build_points(zones: list[dict], rpt) -> dict:
     total_crew = sum(z["crew"] for z in zones)
@@ -544,9 +594,8 @@ def render():
         active="zones",
         title="Site Map",
         subtitle=(
-            "Interactive scatter of every active building, sized by work "
-            "rows and coloured by inferred construction stage. "
-            "Tap any point to inspect it."
+            "Interactive scatter of every active building. Zoom, search, "
+            "and tap a point to inspect it."
         ),
     ):
         ui.add_head_html(_ZONES_CSS, shared=False)
@@ -575,58 +624,153 @@ def render():
             )
             return
 
-        # ── Render matplotlib scatter + get hotspot pixel positions ──
-        try:
-            png_bytes, hotspots = render_scatter(zones)
-        except Exception as e:
-            state.log(f"[err] scatter render: {type(e).__name__}: {e}")
-            ui.label(f"Could not render map: {e}").classes("text-white")
-            return
+        W_PX = 1600.0
+        H_PX = 760.0
 
-        b64 = base64.b64encode(png_bytes).decode("ascii")
-        W_PX, H_PX = 1000.0, 620.0
+        ui_state = {
+            "highlight_id": None,
+            "zoom": 1.0,
+            "search_q": "",
+            "selection": None,
+        }
 
-        selection: dict = {"zone": None}
+        # ═══════════════════════════════════════════════════════════
+        # Toolbar — search + zoom
+        # ═══════════════════════════════════════════════════════════
+        with ui.element("div").classes("dpr-map-toolbar"):
+            with ui.element("div").classes("dpr-search-wrap"):
+                search_input = ui.input(
+                    placeholder="Search building (e.g. 78 or B78)",
+                ).props("dense outlined clearable").classes("w-full")
 
+            with ui.element("div").classes("dpr-zoom-group"):
+                zoom_btns = {}
+                for label, val in [("1×", 1.0), ("2×", 2.0),
+                                    ("3×", 3.0), ("4×", 4.0)]:
+                    b = ui.element("button").classes("dpr-zoom-btn")
+                    if val == 1.0:
+                        b.classes(add="active")
+                    with b:
+                        ui.html(label)
+                    b.on("click", lambda v=val, el=b: _set_zoom(v, el))
+                    zoom_btns[val] = b
+
+        search_status = ui.html("").classes("dpr-search-status")
+
+        # ═══════════════════════════════════════════════════════════
+        # Map container
+        # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-map-wrap"):
-            # ── Map canvas ──────────────────────────────────────────
-            with ui.element("div").classes("dpr-scatter-frame"):
-                ui.html(
-                    f'<img class="dpr-scatter-img" '
-                    f'src="data:image/png;base64,{b64}" alt="Site map"/>'
-                )
+            with ui.element("div").classes("dpr-map-scroll"):
+                scale_wrap = ui.element("div").classes("dpr-map-scale")
 
                 @ui.refreshable
-                def hotspots_layer():
-                    for hs in hotspots:
-                        x_pct = hs["x_px"] / W_PX * 100.0
-                        y_pct = hs["y_px"] / H_PX * 100.0
-                        z = hs["zone"]
-                        is_sel = (
-                            selection["zone"] is not None
-                            and selection["zone"]["id"] == z["id"]
+                def map_view():
+                    hl = ui_state["highlight_id"]
+                    png_bytes, hotspots = render_scatter(
+                        zones, highlight_id=hl,
+                    )
+                    b64 = base64.b64encode(png_bytes).decode("ascii")
+
+                    scale_wrap.clear()
+                    with scale_wrap:
+                        ui.html(
+                            f'<img class="dpr-scatter-img" '
+                            f'src="data:image/png;base64,{b64}" '
+                            f'alt="Site map"/>'
                         )
-                        cls = "dpr-hotspot" + (" selected" if is_sel else "")
-                        el = ui.element("div").classes(cls)
-                        el.style(f"left: {x_pct:.3f}%; top: {y_pct:.3f}%;")
-                        el.on("click", lambda zz=z: _pick(zz))
-
-                def _pick(z):
-                    selection["zone"] = z
-                    hotspots_layer.refresh()
-                    detail_panel.refresh()
-
-                hotspots_layer()
+                        for hs in hotspots:
+                            x_pct = hs["x_px"] / W_PX * 100.0
+                            y_pct = hs["y_px"] / H_PX * 100.0
+                            z = hs["zone"]
+                            is_sel = (
+                                ui_state["selection"] is not None
+                                and ui_state["selection"]["id"] == z["id"]
+                            )
+                            cls = "dpr-hotspot" + (" selected" if is_sel else "")
+                            el = ui.element("div").classes(cls)
+                            el.style(f"left: {x_pct:.3f}%; top: {y_pct:.3f}%;")
+                            el.on("click", lambda zz=z: _pick(zz))
 
             # ── Detail panel ────────────────────────────────────────
             with ui.element("div").classes("dpr-sel-panel"):
                 @ui.refreshable
                 def detail_panel():
-                    _render_selected(selection["zone"])
-
+                    _render_selected(ui_state["selection"])
                 detail_panel()
 
-        # ── Bullet summary ──────────────────────────────────────────
+        # ═══════════════════════════════════════════════════════════
+        # Callbacks
+        # ═══════════════════════════════════════════════════════════
+        def _pick(z: dict):
+            ui_state["selection"] = z
+            ui_state["highlight_id"] = z["id"]
+            map_view.refresh()
+            detail_panel.refresh()
+
+        def _set_zoom(val: float, active_btn):
+            ui_state["zoom"] = val
+            scale_wrap.style(f"width: {int(val * 100)}%;")
+            for v, b in zoom_btns.items():
+                if v == val:
+                    b.classes(add="active")
+                else:
+                    b.classes(remove="active")
+
+        def _on_search(e):
+            q = (e.value or "").strip().lower()
+            if q == ui_state["search_q"]:
+                return
+            ui_state["search_q"] = q
+
+            if not q:
+                ui_state["highlight_id"] = None
+                search_status.content = ""
+                map_view.refresh()
+                return
+
+            # Match order: exact building number, exact id, prefix
+            match: dict | None = None
+            for z in zones:
+                b = str(z.get("building", "")).lower()
+                i = str(z.get("id", "")).lower()
+                if q == b or q == i:
+                    match = z
+                    break
+            if match is None:
+                for z in zones:
+                    b = str(z.get("building", "")).lower()
+                    i = str(z.get("id", "")).lower()
+                    if b.startswith(q) or i.startswith(q):
+                        match = z
+                        break
+
+            if match is None:
+                ui_state["highlight_id"] = None
+                search_status.content = (
+                    f'<span class="err">No building matches "{q}"</span>'
+                )
+                map_view.refresh()
+                return
+
+            ui_state["highlight_id"] = match["id"]
+            ui_state["selection"] = match
+            search_status.content = (
+                f'Highlighting <b>Building {match["building"] or match["id"]}</b>'
+            )
+            map_view.refresh()
+            detail_panel.refresh()
+
+        search_input.on("update:model-value", _on_search)
+
+        # ═══════════════════════════════════════════════════════════
+        # Initial render
+        # ═══════════════════════════════════════════════════════════
+        map_view()
+
+        # ═══════════════════════════════════════════════════════════
+        # Bullet summary
+        # ═══════════════════════════════════════════════════════════
         pts = _build_points(zones, rpt)
 
         overview_html = "".join(f"<li>{b}</li>" for b in pts["overview"])
