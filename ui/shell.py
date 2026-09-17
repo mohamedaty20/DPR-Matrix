@@ -1,7 +1,7 @@
 """SaaS shell — pure CSS grid layout.
 
-Left sidebar: pre-created projects loaded from Turso (item 4).
-Every page also gets the professional site footer (item 25).
+Left sidebar: pre-created projects loaded from Turso.
+Every page gets the professional site footer (year updated to 2026).
 """
 from __future__ import annotations
 
@@ -13,8 +13,6 @@ from nicegui import ui
 from ui import state
 
 
-# Utility links kept above the project list — "New upload" is the only
-# always-present entry now that the old 4-item nav has been replaced.
 _UTILITY = [
     ("home", "New upload", "add_circle", "/"),
 ]
@@ -98,7 +96,7 @@ _FOOTER_HTML = """
       Your feedback is valuable and helps make DPR-Matrix better every day.
     </p>
     <div class="dpr-site-footer-copy">
-      &copy; 2025 Mohamed Abd Al Aty &mdash; Founder, DPR-Matrix.
+      &copy; 2026 Mohamed Abd Al Aty &mdash; Founder, DPR-Matrix.
       All rights reserved.
     </div>
   </div>
@@ -128,7 +126,6 @@ def page_shell(*, active: str, title: str, subtitle: str = ""):
                             ui.icon(icon).classes("dpr-nav-icon")
                             ui.label(label).classes("dpr-nav-label")
 
-            # ── Pre-created projects (Turso-backed) ────────────────
             ui.html('<div class="dpr-nav-section-label">Your projects</div>')
 
             if not projects:
