@@ -12,19 +12,10 @@ from ui import state
 from ui.shell import page_shell
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Stage inference
-# ═══════════════════════════════════════════════════════════════════════════
 _ORDER = {
-    "not_started":   0,
-    "excavation":    1,
-    "blinding":      2,
-    "reinforcement": 3,
-    "formwork":      4,
-    "pouring":       5,
-    "curing":        6,
-    "finishing":     7,
-    "complete":      8,
+    "not_started": 0, "excavation": 1, "blinding": 2,
+    "reinforcement": 3, "formwork": 4, "pouring": 5,
+    "curing": 6, "finishing": 7, "complete": 8,
 }
 _LABEL = STAGE_LABELS
 _COLOR = STAGE_COLORS
@@ -54,8 +45,8 @@ _ACTIVITY_TO_STAGE = {
 }
 
 
-def _stage_for_activity(activity: str) -> str | None:
-    a = (activity or "").lower().strip()
+def _stage_for_activity(a: str) -> str | None:
+    a = (a or "").lower().strip()
     if not a:
         return None
     if a in _ACTIVITY_TO_STAGE:
@@ -73,7 +64,7 @@ def _floor_sort(s: str):
         return (1, s)
 
 
-def _infer_stage(activities: dict, prog_sum: float, prog_n: int) -> str:
+def _infer_stage(activities, prog_sum, prog_n) -> str:
     advanced = -1
     for a in activities:
         st = _stage_for_activity(a)
@@ -99,7 +90,6 @@ def _derive_zones(rpt) -> list[dict]:
         b = (r.get("building") or "").strip()
         z = (r.get("zone") or "").strip()
         key = z or (f"B{b}" if b else "N/A")
-
         g = groups.setdefault(key, {
             "id": key, "label": b or z or "N/A",
             "building": b, "floors": set(), "rows": 0,
@@ -136,11 +126,9 @@ def _derive_zones(rpt) -> list[dict]:
             "top_activity": top, "crew": g["crew"], "stage": stage,
             "avg_progress": avg, "low_conf": g["low_conf"],
         })
-    out.sort(
-        key=lambda x: (
-            int(x["building"]) if x["building"].isdigit() else 10**9,
-        )
-    )
+    out.sort(key=lambda x: (
+        int(x["building"]) if x["building"].isdigit() else 10**9
+    ))
     return out
 
 
@@ -149,27 +137,12 @@ def _derive_zones(rpt) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════
 _ZONES_CSS = """
 <style>
-/* ── Search + zoom bar ─────────────────────────────────────────── */
-.dpr-map-toolbar {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
+/* ── Toolbar ───────────────────────────────────────────────────── */
+.dpr-toolbar {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  margin-bottom: 8px;
 }
-.dpr-search-wrap {
-  flex: 1;
-  min-width: 220px;
-  position: relative;
-}
-.dpr-search-status {
-  font-size: 11px;
-  color: #85858c;
-  padding: 4px 2px 0 2px;
-  min-height: 16px;
-}
-.dpr-search-status b { color: #F2740C; }
-.dpr-search-status.err { color: #ff4d6a; }
+.dpr-search-wrap { flex: 1; min-width: 220px; }
 .dpr-zoom-group {
   display: inline-flex;
   background: #0c0c0f;
@@ -177,27 +150,44 @@ _ZONES_CSS = """
   border-radius: 8px;
   overflow: hidden;
 }
-.dpr-zoom-btn {
-  background: transparent;
-  border: none;
-  color: #85858c;
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 6px 12px;
-  cursor: pointer;
-  border-right: 1px solid rgba(242,116,12,0.15);
+.dpr-zoom-btn.q-btn {
+  background: transparent !important;
+  border: none !important;
+  border-right: 1px solid rgba(242,116,12,0.15) !important;
+  border-radius: 0 !important;
+  color: #85858c !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  min-width: 44px !important;
+  padding: 0 10px !important;
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
 }
-.dpr-zoom-btn:last-child { border-right: none; }
-.dpr-zoom-btn:hover { color: #F2740C; background: rgba(242,116,12,0.06); }
-.dpr-zoom-btn.active {
-  background: rgba(242,116,12,0.14);
-  color: #F2740C;
+.dpr-zoom-btn.q-btn:last-child { border-right: none !important; }
+.dpr-zoom-btn.q-btn:hover { color: #F2740C !important; background: rgba(242,116,12,0.06) !important; }
+.dpr-zoom-btn.q-btn.dpr-zoom-active {
+  background: rgba(242,116,12,0.16) !important;
+  color: #F2740C !important;
 }
+.dpr-clear-btn.q-btn {
+  min-height: 32px !important; height: 32px !important;
+  padding: 0 12px !important; font-size: 11.5px !important;
+  border-color: rgba(255,77,106,0.35) !important;
+  color: #ff4d6a !important;
+}
+.dpr-clear-btn.q-btn:hover {
+  background: rgba(255,77,106,0.08) !important;
+  border-color: #ff4d6a !important;
+}
+.dpr-search-status {
+  font-size: 11px; color: #85858c;
+  padding: 2px 2px 8px 2px; min-height: 18px;
+}
+.dpr-search-status b { color: #F2740C; }
+.dpr-search-status.err { color: #ff4d6a; }
 
-/* ── Scroll container ──────────────────────────────────────────── */
-.dpr-map-scroll {
+/* ── Viewport (scrolling container) ────────────────────────────── */
+.dpr-viewport {
   width: 100%;
   max-height: 72vh;
   overflow: auto;
@@ -205,16 +195,17 @@ _ZONES_CSS = """
   border-radius: 12px;
   background: #08080a;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
 }
-.dpr-map-scale {
+.dpr-canvas {
   position: relative;
   width: 100%;
-  transition: width .15s ease;
+  transition: width .18s ease;
 }
-.dpr-scatter-img {
+.dpr-canvas img.dpr-scatter-img {
+  display: block;
   width: 100%;
   height: auto;
-  display: block;
   pointer-events: none;
   user-select: none;
   -webkit-user-drag: none;
@@ -223,8 +214,7 @@ _ZONES_CSS = """
 /* ── Hotspots ──────────────────────────────────────────────────── */
 .dpr-hotspot {
   position: absolute;
-  width: 34px;
-  height: 34px;
+  width: 30px; height: 30px;
   border-radius: 50%;
   transform: translate(-50%, -50%);
   cursor: pointer;
@@ -242,17 +232,17 @@ _ZONES_CSS = """
   background: rgba(242,116,12,0.16);
   border-color: #F2740C;
   box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
-              0 0 24px rgba(242,116,12,0.55);
+              0 0 22px rgba(242,116,12,0.55);
   animation: dpr-hs-pulse 1.8s ease-in-out infinite;
 }
 @keyframes dpr-hs-pulse {
   0%, 100% { box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
-                        0 0 24px rgba(242,116,12,0.55); }
+                        0 0 22px rgba(242,116,12,0.55); }
   50%      { box-shadow: 0 0 0 2px rgba(242,116,12,0.32),
                         0 0 32px rgba(242,116,12,0.8); }
 }
 
-/* ── Detail panel ──────────────────────────────────────────────── */
+/* ── Detail panel ─────────────────────────────────────────────── */
 .dpr-map-wrap {
   display: grid;
   grid-template-columns: 1fr 300px;
@@ -268,8 +258,7 @@ _ZONES_CSS = """
   border: 1px solid rgba(242,116,12,0.28);
   border-radius: 12px;
   padding: 16px 18px;
-  position: sticky;
-  top: 68px;
+  position: sticky; top: 68px;
   max-height: calc(100vh - 84px);
   overflow-y: auto;
 }
@@ -277,45 +266,25 @@ _ZONES_CSS = """
   .dpr-sel-panel { position: relative; top: 0; max-height: none; }
 }
 .dpr-sel-empty {
-  color: #4f4f56;
-  font-size: 12px;
-  text-align: center;
-  padding: 36px 12px;
-  line-height: 1.6;
-  font-style: italic;
+  color: #4f4f56; font-size: 12px;
+  text-align: center; padding: 36px 12px;
+  line-height: 1.6; font-style: italic;
 }
 .dpr-sel-band {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 11px;
-  border-radius: 8px;
-  margin-bottom: 12px;
-  color: #050506;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 7px 11px; border-radius: 8px;
+  margin-bottom: 12px; color: #050506;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
 }
 .dpr-sel-title {
-  color: #e8e8ea;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  margin-bottom: 2px;
+  color: #e8e8ea; font-size: 22px; font-weight: 800;
+  letter-spacing: -0.02em; margin-bottom: 2px;
 }
-.dpr-sel-sub {
-  color: #85858c;
-  font-size: 11px;
-  margin-bottom: 14px;
-}
+.dpr-sel-sub { color: #85858c; font-size: 11px; margin-bottom: 14px; }
 .dpr-sel-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: 8px;
-  padding: 8px 0;
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; padding: 8px 0;
   border-bottom: 1px solid rgba(242,116,12,0.08);
   font-size: 12px;
 }
@@ -327,29 +296,19 @@ _ZONES_CSS = """
 .dpr-sel-val.risk   { color: #ff4d6a; }
 .dpr-sel-val.ok     { color: #0a8a3b; }
 .dpr-sel-prog {
-  height: 6px;
-  background: rgba(255,255,255,0.05);
-  border-radius: 999px;
-  overflow: hidden;
-  margin: 6px 0 4px 0;
+  height: 6px; background: rgba(255,255,255,0.05);
+  border-radius: 999px; overflow: hidden; margin: 6px 0 4px 0;
 }
 .dpr-sel-prog-fill { height: 100%; border-radius: 999px; }
-.dpr-sel-acts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 8px;
-}
+.dpr-sel-acts { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
 .dpr-sel-act {
-  font-size: 10px;
-  color: #c8c8cc;
+  font-size: 10px; color: #c8c8cc;
   background: rgba(242,116,12,0.07);
   border: 1px solid rgba(242,116,12,0.18);
-  padding: 2px 7px;
-  border-radius: 4px;
+  padding: 2px 7px; border-radius: 4px;
 }
 
-/* ── Bullet summary ────────────────────────────────────────────── */
+/* ── Bullet summary ───────────────────────────────────────────── */
 .dpr-points {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
   border: 1px solid rgba(242,116,12,0.20);
@@ -359,32 +318,21 @@ _ZONES_CSS = """
 .dpr-pts-section { margin-bottom: 16px; }
 .dpr-pts-section:last-child { margin-bottom: 0; }
 .dpr-pts-head {
-  color: #F2740C;
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-weight: 700;
-  margin-bottom: 8px;
-  padding-bottom: 5px;
+  color: #F2740C; font-size: 10.5px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  font-weight: 700; margin-bottom: 8px; padding-bottom: 5px;
   border-bottom: 1px solid rgba(242,116,12,0.10);
 }
 .dpr-pts-list { list-style: none; margin: 0; padding: 0; }
 .dpr-pts-list li {
-  position: relative;
-  padding: 5px 0 5px 18px;
-  color: #c8c8cc;
-  font-size: 12px;
-  line-height: 1.55;
+  position: relative; padding: 5px 0 5px 18px;
+  color: #c8c8cc; font-size: 12px; line-height: 1.55;
   border-bottom: 1px solid rgba(242,116,12,0.05);
 }
 .dpr-pts-list li:last-child { border-bottom: none; }
 .dpr-pts-list li:before {
-  content: "▸";
-  position: absolute;
-  left: 0; top: 5px;
-  color: #F2740C;
-  font-size: 11px;
-  font-weight: 700;
+  content: "▸"; position: absolute; left: 0; top: 5px;
+  color: #F2740C; font-size: 11px; font-weight: 700;
 }
 .dpr-pts-list li.warn:before { color: #ffb020; content: "⚠"; }
 .dpr-pts-list li.risk:before { color: #ff4d6a; content: "⚠"; }
@@ -395,13 +343,13 @@ _ZONES_CSS = """
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Selected zone detail panel
+# Detail panel
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_selected(z: dict | None) -> None:
     if z is None:
         ui.html(
             '<div class="dpr-sel-empty">'
-            'Tap a point on the scatter map — or search a building — '
+            'Tap a point on the map — or search a building — '
             'to see its status, crew, and activities.'
             '</div>'
         )
@@ -476,19 +424,16 @@ def _render_selected(z: dict | None) -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 # Bullet summary
 # ═══════════════════════════════════════════════════════════════════════════
-def _build_points(zones: list[dict], rpt) -> dict:
+def _build_points(zones, rpt) -> dict:
     total_crew = sum(z["crew"] for z in zones)
     total_rows = sum(z["rows"] for z in zones)
     total_acts = len({a for z in zones for a in z["activities"]})
-
     stage_counts = Counter(z["stage"] for z in zones)
     top_stage = stage_counts.most_common(1)[0] if stage_counts else ("not_started", 0)
 
     top_crew = sorted(
-        [z for z in zones if z["crew"] > 0],
-        key=lambda z: -z["crew"],
+        [z for z in zones if z["crew"] > 0], key=lambda z: -z["crew"]
     )[:3]
-
     sorted_stage = sorted(zones, key=lambda z: _ORDER.get(z["stage"], 0))
     latest = sorted_stage[-1] if sorted_stage else None
     earliest = sorted_stage[0] if sorted_stage else None
@@ -521,67 +466,38 @@ def _build_points(zones: list[dict], rpt) -> dict:
 
     watch: list[tuple[str, str]] = []
     if stalled:
-        watch.append((
-            "warn",
+        watch.append(("warn",
             f"<b>{len(stalled)}</b> zone(s) at excavation with crew assigned "
-            f"— possible stall: {', '.join(z['id'] for z in stalled)}",
-        ))
+            f"— possible stall: {', '.join(z['id'] for z in stalled)}"))
     if high_crew_low:
         top = high_crew_low[0]
-        watch.append((
-            "warn",
+        watch.append(("warn",
             f"<b>{top['id']}</b> has {top['crew']} crew but only "
-            f"{top['avg_progress']:.0f}% progress — resources may be idle",
-        ))
+            f"{top['avg_progress']:.0f}% progress — resources may be idle"))
     if low_conf:
-        watch.append((
-            "warn",
+        watch.append(("warn",
             f"<b>{len(low_conf)}</b> zone(s) contain low-confidence rows — "
-            f"verify before sign-off: {', '.join(z['id'] for z in low_conf[:5])}",
-        ))
+            f"verify: {', '.join(z['id'] for z in low_conf[:5])}"))
     if n_hard:
-        watch.append((
-            "risk",
-            f"<b>{n_hard}</b> hard conflict(s) across source files — "
-            f"see Conflicts banner on Report dashboard",
-        ))
+        watch.append(("risk",
+            f"<b>{n_hard}</b> hard conflict(s) across source files"))
     if not watch:
-        watch.append((
-            "ok",
-            "No material issues detected — data is consistent across sources",
-        ))
+        watch.append(("ok",
+            "No material issues detected — data is consistent across sources"))
 
     actions: list[str] = []
     if stalled:
-        actions.append(
-            f"Reallocate crew to accelerate "
-            f"{', '.join(z['id'] for z in stalled[:3])} or confirm the delay"
-        )
+        actions.append(f"Reallocate crew to accelerate "
+                       f"{', '.join(z['id'] for z in stalled[:3])}")
     if high_crew_low:
-        actions.append(
-            f"Audit productivity in <b>{high_crew_low[0]['id']}</b> — "
-            f"{high_crew_low[0]['crew']} crew at "
-            f"{high_crew_low[0]['avg_progress']:.0f}%"
-        )
+        actions.append(f"Audit productivity in <b>{high_crew_low[0]['id']}</b>")
     if low_conf:
-        actions.append(
-            "Open Reconcile Sources and verify flagged zones before export"
-        )
+        actions.append("Verify flagged zones in Reconcile Sources before export")
     if latest and _ORDER[latest["stage"]] >= _ORDER["pouring"]:
-        actions.append(
-            f"Schedule cube tests / curing verification for "
-            f"<b>{latest['id']}</b> per compliance practice"
-        )
-    if earliest and latest and earliest["id"] != latest["id"]:
-        gap = _ORDER[latest["stage"]] - _ORDER[earliest["stage"]]
-        if gap >= 4:
-            actions.append(
-                f"Site progression gap between <b>{earliest['id']}</b> "
-                f"({_LABEL[earliest['stage']]}) and <b>{latest['id']}</b> "
-                f"({_LABEL[latest['stage']]}) — review sequencing"
-            )
+        actions.append(f"Schedule cube tests / curing verification for "
+                       f"<b>{latest['id']}</b>")
     if not actions:
-        actions.append("Continue as planned — no corrective action required today")
+        actions.append("Continue as planned — no corrective action required")
 
     return {"overview": overview, "watch": watch, "actions": actions}
 
@@ -604,10 +520,9 @@ def render():
         if rpt is None:
             with ui.card().classes("dpr-card w-full"):
                 ui.label("No report in this session.").classes("dpr-title text-xl")
-                ui.label(
-                    "Aggregate at least one file first — the map is "
-                    "derived from the report's work progress rows."
-                ).classes("text-white")
+                ui.label("Aggregate at least one file first — the map is "
+                         "derived from the report's work progress rows.") \
+                    .classes("text-white")
             with ui.row().classes("gap-3 mt-2"):
                 ui.button("Back to Upload",
                           on_click=lambda: ui.navigate.to("/"))
@@ -624,119 +539,141 @@ def render():
             )
             return
 
-        W_PX = 1600.0
-        H_PX = 760.0
+        W_PX, H_PX = 1600.0, 760.0
 
-        ui_state = {
+        app_state = {
             "highlight_id": None,
-            "zoom": 1.0,
-            "search_q": "",
             "selection": None,
+            "zoom": 1.0,
         }
+        refs: dict = {"canvas": None, "zoom_btns": {}, "clear_btn": None}
 
         # ═══════════════════════════════════════════════════════════
-        # Toolbar — search + zoom
+        # Toolbar
         # ═══════════════════════════════════════════════════════════
-        with ui.element("div").classes("dpr-map-toolbar"):
+        with ui.element("div").classes("dpr-toolbar"):
             with ui.element("div").classes("dpr-search-wrap"):
                 search_input = ui.input(
-                    placeholder="Search building (e.g. 78 or B78)",
+                    placeholder="Search building — type a number (e.g. 78)",
+                    on_change=lambda e: _on_search(e.value or ""),
                 ).props("dense outlined clearable").classes("w-full")
 
             with ui.element("div").classes("dpr-zoom-group"):
-                zoom_btns = {}
                 for label, val in [("1×", 1.0), ("2×", 2.0),
                                     ("3×", 3.0), ("4×", 4.0)]:
-                    b = ui.element("button").classes("dpr-zoom-btn")
+                    b = ui.button(label,
+                                  on_click=lambda v=val: _set_zoom(v)) \
+                        .classes("dpr-zoom-btn")
                     if val == 1.0:
-                        b.classes(add="active")
-                    with b:
-                        ui.html(label)
-                    b.on("click", lambda v=val, el=b: _set_zoom(v, el))
-                    zoom_btns[val] = b
+                        b.classes(add="dpr-zoom-active")
+                    refs["zoom_btns"][val] = b
+
+            refs["clear_btn"] = ui.button(
+                "Clear", on_click=lambda: _clear_selection(),
+            ).classes("dpr-clear-btn")
+            refs["clear_btn"].set_visibility(False)
 
         search_status = ui.html("").classes("dpr-search-status")
 
         # ═══════════════════════════════════════════════════════════
-        # Map container
+        # Map
         # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-map-wrap"):
-            with ui.element("div").classes("dpr-map-scroll"):
-                scale_wrap = ui.element("div").classes("dpr-map-scale")
+            viewport = ui.element("div").classes("dpr-viewport")
+            with viewport:
+                canvas = ui.element("div").classes("dpr-canvas")
+            refs["canvas"] = canvas
 
-                @ui.refreshable
-                def map_view():
-                    hl = ui_state["highlight_id"]
-                    png_bytes, hotspots = render_scatter(
-                        zones, highlight_id=hl,
+            @ui.refreshable
+            def map_view():
+                canvas.clear()
+                png_bytes, hotspots = render_scatter(
+                    zones, highlight_id=app_state["highlight_id"],
+                )
+                b64 = base64.b64encode(png_bytes).decode("ascii")
+                with canvas:
+                    ui.html(
+                        f'<img class="dpr-scatter-img" '
+                        f'src="data:image/png;base64,{b64}" alt="Site map"/>'
                     )
-                    b64 = base64.b64encode(png_bytes).decode("ascii")
-
-                    scale_wrap.clear()
-                    with scale_wrap:
-                        ui.html(
-                            f'<img class="dpr-scatter-img" '
-                            f'src="data:image/png;base64,{b64}" '
-                            f'alt="Site map"/>'
+                    for hs in hotspots:
+                        x_pct = hs["x_px"] / W_PX * 100.0
+                        y_pct = hs["y_px"] / H_PX * 100.0
+                        z = hs["zone"]
+                        is_sel = (
+                            app_state["selection"] is not None
+                            and app_state["selection"]["id"] == z["id"]
                         )
-                        for hs in hotspots:
-                            x_pct = hs["x_px"] / W_PX * 100.0
-                            y_pct = hs["y_px"] / H_PX * 100.0
-                            z = hs["zone"]
-                            is_sel = (
-                                ui_state["selection"] is not None
-                                and ui_state["selection"]["id"] == z["id"]
-                            )
-                            cls = "dpr-hotspot" + (" selected" if is_sel else "")
-                            el = ui.element("div").classes(cls)
-                            el.style(f"left: {x_pct:.3f}%; top: {y_pct:.3f}%;")
-                            el.on("click", lambda zz=z: _pick(zz))
+                        cls = "dpr-hotspot" + (" selected" if is_sel else "")
+                        el = ui.element("div").classes(cls)
+                        el.style(f"left:{x_pct:.3f}%; top:{y_pct:.3f}%;")
+                        el.on("click", lambda zz=z: _pick(zz))
 
-            # ── Detail panel ────────────────────────────────────────
             with ui.element("div").classes("dpr-sel-panel"):
                 @ui.refreshable
                 def detail_panel():
-                    _render_selected(ui_state["selection"])
+                    _render_selected(app_state["selection"])
                 detail_panel()
 
         # ═══════════════════════════════════════════════════════════
         # Callbacks
         # ═══════════════════════════════════════════════════════════
+        def _refresh_clear_btn() -> None:
+            if app_state["selection"] is None:
+                refs["clear_btn"].set_visibility(False)
+            else:
+                refs["clear_btn"].set_visibility(True)
+
         def _pick(z: dict):
-            ui_state["selection"] = z
-            ui_state["highlight_id"] = z["id"]
+            if app_state["selection"] and app_state["selection"]["id"] == z["id"]:
+                # Second click → deselect
+                app_state["selection"] = None
+                app_state["highlight_id"] = None
+            else:
+                app_state["selection"] = z
+                app_state["highlight_id"] = z["id"]
             map_view.refresh()
             detail_panel.refresh()
+            _refresh_clear_btn()
 
-        def _set_zoom(val: float, active_btn):
-            ui_state["zoom"] = val
-            scale_wrap.style(f"width: {int(val * 100)}%;")
-            for v, b in zoom_btns.items():
+        def _clear_selection():
+            app_state["selection"] = None
+            app_state["highlight_id"] = None
+            map_view.refresh()
+            detail_panel.refresh()
+            search_status.content = ""
+            _refresh_clear_btn()
+
+        def _set_zoom(val: float):
+            app_state["zoom"] = val
+            canvas.style(f"width: {int(val * 100)}%;")
+            for v, b in refs["zoom_btns"].items():
                 if v == val:
-                    b.classes(add="active")
+                    b.classes(add="dpr-zoom-active")
                 else:
-                    b.classes(remove="active")
+                    b.classes(remove="dpr-zoom-active")
 
-        def _on_search(e):
-            q = (e.value or "").strip().lower()
-            if q == ui_state["search_q"]:
-                return
-            ui_state["search_q"] = q
+        def _on_search(q: str):
+            q = (q or "").strip().lower()
 
             if not q:
-                ui_state["highlight_id"] = None
+                app_state["highlight_id"] = None
+                app_state["selection"] = None
                 search_status.content = ""
                 map_view.refresh()
+                detail_panel.refresh()
+                _refresh_clear_btn()
                 return
 
-            # Match order: exact building number, exact id, prefix
-            match: dict | None = None
+            # 1. exact building or id match
+            match = None
             for z in zones:
                 b = str(z.get("building", "")).lower()
                 i = str(z.get("id", "")).lower()
                 if q == b or q == i:
                     match = z
                     break
+            # 2. prefix match
             if match is None:
                 for z in zones:
                     b = str(z.get("building", "")).lower()
@@ -744,39 +681,47 @@ def render():
                     if b.startswith(q) or i.startswith(q):
                         match = z
                         break
+            # 3. substring match
+            if match is None:
+                for z in zones:
+                    b = str(z.get("building", "")).lower()
+                    i = str(z.get("id", "")).lower()
+                    if q in b or q in i:
+                        match = z
+                        break
 
             if match is None:
-                ui_state["highlight_id"] = None
+                app_state["highlight_id"] = None
+                app_state["selection"] = None
                 search_status.content = (
                     f'<span class="err">No building matches "{q}"</span>'
                 )
                 map_view.refresh()
+                detail_panel.refresh()
+                _refresh_clear_btn()
                 return
 
-            ui_state["highlight_id"] = match["id"]
-            ui_state["selection"] = match
+            app_state["highlight_id"] = match["id"]
+            app_state["selection"] = match
             search_status.content = (
                 f'Highlighting <b>Building {match["building"] or match["id"]}</b>'
             )
             map_view.refresh()
             detail_panel.refresh()
-
-        search_input.on("update:model-value", _on_search)
+            _refresh_clear_btn()
 
         # ═══════════════════════════════════════════════════════════
         # Initial render
         # ═══════════════════════════════════════════════════════════
         map_view()
+        _set_zoom(1.0)   # apply default zoom to canvas
 
         # ═══════════════════════════════════════════════════════════
         # Bullet summary
         # ═══════════════════════════════════════════════════════════
         pts = _build_points(zones, rpt)
-
         overview_html = "".join(f"<li>{b}</li>" for b in pts["overview"])
-        watch_html = "".join(
-            f'<li class="{cls}">{b}</li>' for cls, b in pts["watch"]
-        )
+        watch_html = "".join(f'<li class="{c}">{b}</li>' for c, b in pts["watch"])
         actions_html = "".join(f"<li>{b}</li>" for b in pts["actions"])
 
         ui.html(
