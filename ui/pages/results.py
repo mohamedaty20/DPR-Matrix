@@ -1,4 +1,4 @@
-"""Results — report dashboard with project sidebar, tabs, and analytics."""
+"""Results — report dashboard with right-side project details drawer."""
 from __future__ import annotations
 
 import base64
@@ -30,83 +30,129 @@ from ui.components import (
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# CSS (page-scoped)
+# Page CSS — drawer, header, tabs
 # ═══════════════════════════════════════════════════════════════════════════
 _REPORT_CSS = """
 <style>
-.dpr-report-shell {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 16px;
-  align-items: start;
-  width: 100%;
-}
-.dpr-report-shell.collapsed {
-  grid-template-columns: 44px 1fr;
-}
-@media (max-width: 900px) {
-  .dpr-report-shell { grid-template-columns: 1fr; }
-  .dpr-report-shell.collapsed { grid-template-columns: 1fr; }
-}
-
-.dpr-proj-sidebar {
-  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
-  border: 1px solid rgba(34,197,94,0.20);
-  border-radius: 12px;
-  padding: 14px 14px 16px 14px;
-  position: sticky;
-  top: 68px;
-  max-height: calc(100vh - 84px);
-  overflow-y: auto;
-}
-.dpr-proj-sidebar.collapsed {
-  padding: 10px 6px;
-  overflow: hidden;
-}
-.dpr-proj-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-  gap: 8px;
-}
-.dpr-proj-head-title {
+/* ── Floating toggle button (fixed, top-right, below topbar) ──────── */
+.dpr-drawer-toggle {
+  position: fixed;
+  top: 62px;
+  right: 16px;
+  z-index: 45;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: #0c0c0f;
+  border: 1px solid rgba(34,197,94,0.42);
   color: #22c55e;
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-.dpr-proj-toggle {
-  background: transparent;
-  color: #85858c;
-  border: 1px solid rgba(34,197,94,0.20);
-  border-radius: 6px;
-  width: 26px;
-  height: 26px;
-  min-width: 26px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  box-shadow: 0 2px 14px rgba(0,0,0,0.55);
+  transition: border-color .15s ease, background .15s ease;
+}
+.dpr-drawer-toggle:hover {
+  border-color: rgba(34,197,94,0.85);
+  background: rgba(34,197,94,0.06);
+}
+.dpr-drawer-toggle .dpr-drawer-toggle-label {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ── Drawer (slides in from right) ────────────────────────────────── */
+.dpr-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100vh;
+  width: 340px;
+  max-width: 92vw;
+  background: linear-gradient(180deg, #0c0c0f 0%, #06060a 100%);
+  border-left: 1px solid rgba(34,197,94,0.28);
+  box-shadow: -10px 0 40px rgba(0,0,0,0.7);
+  transform: translateX(105%);
+  transition: transform .22s ease;
+  z-index: 70;
+  overflow-y: auto;
+  padding: 16px 16px 28px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+.dpr-drawer.open { transform: translateX(0); }
+
+/* ── Backdrop (dim, click to close) ───────────────────────────────── */
+.dpr-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease;
+  z-index: 60;
+}
+.dpr-drawer-backdrop.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ── Drawer header ────────────────────────────────────────────────── */
+.dpr-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(34,197,94,0.18);
+  gap: 8px;
+}
+.dpr-drawer-title {
+  color: #22c55e;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+.dpr-drawer-close {
+  background: transparent;
+  color: #85858c;
+  border: 1px solid rgba(34,197,94,0.28);
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
   line-height: 1;
   padding: 0;
 }
-.dpr-proj-toggle:hover {
+.dpr-drawer-close:hover {
   color: #22c55e;
-  border-color: rgba(34,197,94,0.5);
+  border-color: rgba(34,197,94,0.7);
 }
+
+/* ── Project fields ───────────────────────────────────────────────── */
 .dpr-proj-logo {
   width: 100%;
-  max-height: 72px;
+  max-height: 80px;
   object-fit: contain;
   display: block;
   margin-bottom: 10px;
   border-radius: 6px;
   background: #050506;
-  padding: 6px;
-  border: 1px solid rgba(34,197,94,0.15);
+  padding: 8px;
+  border: 1px solid rgba(34,197,94,0.18);
 }
 .dpr-proj-field { margin-bottom: 10px; }
 .dpr-proj-label {
@@ -119,13 +165,14 @@ _REPORT_CSS = """
   margin-bottom: 4px;
 }
 
+/* ── Report header (in main flow) ─────────────────────────────────── */
 .dpr-report-main {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
+  width: 100%;
 }
-
 .dpr-report-header {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
   border: 1px solid rgba(34,197,94,0.20);
@@ -177,6 +224,18 @@ _REPORT_CSS = """
   font-size: 11px !important;
   font-weight: 600 !important;
 }
+
+/* ── Compact tabs ─────────────────────────────────────────────────── */
+.dpr-tabs .q-tab {
+  min-height: 34px !important;
+  padding: 0 10px !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+}
+.dpr-tabs .q-tab__label { font-size: 11.5px !important; }
+.dpr-tabs .q-tab__icon { font-size: 16px !important; }
 </style>
 """
 
@@ -201,9 +260,6 @@ def _stem() -> str:
     return f"DPR_{proj}_{date}"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Downloads
-# ═══════════════════════════════════════════════════════════════════════════
 def _download_pdf():
     try:
         from core.exporters.pdf_exporter import export_pdf
@@ -253,7 +309,6 @@ _MIRROR_TO_REPORT = {
 
 
 def _sync_report_from_session() -> None:
-    """Fill report.project_meta and mirrored fields from session state."""
     rpt = state.report()
     if rpt is None:
         return
@@ -272,7 +327,6 @@ def _sync_report_from_session() -> None:
 
 
 def _hydrate_session_from_report() -> None:
-    """On render, pull saved project_meta into session for the sidebar."""
     rpt = state.report()
     if rpt is None:
         return
@@ -282,7 +336,6 @@ def _hydrate_session_from_report() -> None:
             continue
         if v and not state.project_details().get(k):
             state.set_project_detail(k, v)
-    # Logo restore
     if pm.get("logo_b64") and not state.get_project_logo():
         try:
             raw = base64.b64decode(pm["logo_b64"])
@@ -306,9 +359,9 @@ def _on_field_changed(key: str, value: str) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Sidebar
+# Drawer content (project details)
 # ═══════════════════════════════════════════════════════════════════════════
-def _render_project_sidebar() -> None:
+def _render_project_details_body() -> None:
     pd = state.project_details()
 
     def _field(key: str, label: str, placeholder: str = "") -> None:
@@ -320,7 +373,6 @@ def _render_project_sidebar() -> None:
                 on_change=lambda e, k=key: _on_field_changed(k, e.value or ""),
             ).props("dense outlined").classes("w-full")
 
-    # ── Logo ─────────────────────────────────────────────────────────
     logo = state.get_project_logo()
     if logo:
         data, mime = logo
@@ -365,9 +417,8 @@ def _render_project_sidebar() -> None:
             ui.navigate.to("/results")
         ui.button("Remove logo", on_click=_remove_logo).classes(
             "dpr-btn-danger dpr-btn-xs w-full"
-        )
+        ).style("margin-top: 6px;")
 
-    # ── Fields ───────────────────────────────────────────────────────
     _field("project_name", "Project name", "e.g. WTG Foundation Package")
     _field("location",     "Location",     "e.g. Ras Ghareb, Zone B")
     _field("company_name", "Company name", "e.g. Orascom Construction")
@@ -376,7 +427,6 @@ def _render_project_sidebar() -> None:
     _field("weather",      "Weather",      "e.g. Clear, 34°C")
     _field("shift",        "Shift",        "e.g. Day")
 
-    # ── Save button ──────────────────────────────────────────────────
     async def _save_details():
         _sync_report_from_session()
         rid = state.report_id()
@@ -395,7 +445,7 @@ def _render_project_sidebar() -> None:
 
     ui.button("Save details", on_click=_save_details).classes(
         "dpr-btn-primary dpr-btn-xs w-full"
-    ).style("margin-top: 6px;")
+    ).style("margin-top: 12px;")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -403,14 +453,14 @@ def _render_project_sidebar() -> None:
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_report_header(rpt, on_reconcile, on_targets):
     with ui.element("div").classes("dpr-report-header"):
-        ui.html('<div class="dpr-proj-head-title" '
-                'style="margin-bottom:10px;">Report header</div>')
+        ui.html('<div style="color:#22c55e;font-size:10.5px;'
+                'letter-spacing:0.14em;text-transform:uppercase;'
+                'font-weight:700;margin-bottom:10px;">Report header</div>')
         with ui.element("div").classes("dpr-report-header-grid"):
             with ui.element("div"):
                 ui.label("Date").classes("dpr-proj-label")
                 def _on_date(e):
                     rpt.report_date = e.value or ""
-                    state.project_details()["_dirty_report"] = True
                 ui.input(
                     value=rpt.report_date or "",
                     placeholder="YYYY-MM-DD",
@@ -799,96 +849,104 @@ def render():
             _empty()
             return
 
-        # Pull saved project_meta into session so sidebar shows saved values
         _hydrate_session_from_report()
 
-        flags = {"sidebar_open": True}
+        # ── Drawer + backdrop + toggle (all fixed-position, no scroll) ──
+        backdrop = ui.element("div").classes("dpr-drawer-backdrop")
 
-        with ui.element("div").classes("dpr-report-shell") as shell:
-            # ── Sidebar ─────────────────────────────────────────────
-            sidebar_outer = ui.element("div").classes("dpr-proj-sidebar")
-            with sidebar_outer:
-                with ui.element("div").classes("dpr-proj-head"):
-                    ui.html('<div class="dpr-proj-head-title">'
-                            'Project details</div>')
-                    toggle_btn = ui.element("button").classes("dpr-proj-toggle")
-                    with toggle_btn:
-                        toggle_icon = ui.html("◀")
+        drawer = ui.element("div").classes("dpr-drawer")
+        with drawer:
+            with ui.element("div").classes("dpr-drawer-head"):
+                ui.html('<div class="dpr-drawer-title">Project details</div>')
+                close_btn = ui.element("button").classes("dpr-drawer-close")
+                with close_btn:
+                    ui.html("✕")
+            _render_project_details_body()
 
-                sidebar_body = ui.element("div")
-                with sidebar_body:
-                    _render_project_sidebar()
+        toggle_btn = ui.element("button").classes("dpr-drawer-toggle")
+        with toggle_btn:
+            toggle_icon = ui.html("☰")
 
-            # ── Main ────────────────────────────────────────────────
-            with ui.element("div").classes("dpr-report-main"):
-                def _open_reconcile():
-                    ui.navigate.to("/reconcile")
+        # ── Drawer open/close ────────────────────────────────────────
+        drawer_state = {"open": False}
 
-                def _open_targets():
-                    _TARGETS_OPENER["fn"]()
+        def _open_drawer():
+            drawer_state["open"] = True
+            drawer.classes(add="open")
+            backdrop.classes(add="open")
+            toggle_icon.content = "✕"
 
-                _render_report_header(rpt, _open_reconcile, _open_targets)
-                _download_row()
+        def _close_drawer():
+            drawer_state["open"] = False
+            drawer.classes(remove="open")
+            backdrop.classes(remove="open")
+            toggle_icon.content = "☰"
 
-                mp = A.manpower(rpt)
-                act = A.activities(rpt)
-                prog = A.progress(rpt)
-                q = Q.compute_quality(rpt)
-
-                grade_tone = (
-                    "primary" if q.grade in ("A", "B")
-                    else "warning" if q.grade == "C"
-                    else "danger"
-                )
-                stat_grid([
-                    {"label": "Quality", "value": q.grade,
-                     "sub": f"score {q.score}/100", "tone": grade_tone},
-                    {"label": "Work rows", "value": len(rpt.work_progress),
-                     "sub": f"{A.fmt_count(mp.buildings_with_crew)} building(s) · "
-                            f"{act.distinct} activities"},
-                    {"label": "Manpower", "value": A.fmt_count(mp.total),
-                     "sub": f"{mp.skilled} skilled · {mp.helpers} helpers"},
-                    {"label": "Avg progress",
-                     "value": A.fmt_pct(prog.avg_pct) if prog.reported else "—",
-                     "sub": (f"{prog.reported}/{prog.total_rows} reported"
-                             if prog.reported else "none reported")},
-                ])
-
-                _render_risk_section()
-                _render_production_panel(rpt)
-
-                with ui.tabs().classes("w-full") as tabs:
-                    ui.tab("Overview", icon="dashboard")
-                    ui.tab("Layout",   icon="grid_view")
-                    ui.tab("Quality",  icon="verified")
-                    ui.tab("Detailed", icon="table_view")
-
-                with ui.tab_panels(tabs, value="Overview").classes(
-                    "w-full"
-                ).style("background: transparent; padding: 0;"):
-                    with ui.tab_panel("Overview").style("padding: 12px 0 0 0;"):
-                        _overview_tab(rpt, mp, act, prog)
-                    with ui.tab_panel("Layout").style("padding: 12px 0 0 0;"):
-                        _layout_tab(rpt)
-                    with ui.tab_panel("Quality").style("padding: 12px 0 0 0;"):
-                        _quality_tab(rpt, q)
-                    with ui.tab_panel("Detailed").style("padding: 12px 0 0 0;"):
-                        _detailed_tab(rpt)
-
-        def _toggle():
-            flags["sidebar_open"] = not flags["sidebar_open"]
-            if flags["sidebar_open"]:
-                sidebar_outer.classes(remove="collapsed")
-                sidebar_body.visible = True
-                shell.classes(remove="collapsed")
-                toggle_icon.content = "◀"
+        def _toggle_drawer():
+            if drawer_state["open"]:
+                _close_drawer()
             else:
-                sidebar_outer.classes(add="collapsed")
-                sidebar_body.visible = False
-                shell.classes(add="collapsed")
-                toggle_icon.content = "▶"
+                _open_drawer()
 
-        toggle_btn.on("click", _toggle)
+        toggle_btn.on("click", _toggle_drawer)
+        close_btn.on("click", _close_drawer)
+        backdrop.on("click", _close_drawer)
+
+        # ── Main content (full width) ────────────────────────────────
+        with ui.element("div").classes("dpr-report-main"):
+            def _open_reconcile():
+                ui.navigate.to("/reconcile")
+
+            def _open_targets():
+                _TARGETS_OPENER["fn"]()
+
+            _render_report_header(rpt, _open_reconcile, _open_targets)
+            _download_row()
+
+            mp = A.manpower(rpt)
+            act = A.activities(rpt)
+            prog = A.progress(rpt)
+            q = Q.compute_quality(rpt)
+
+            grade_tone = (
+                "primary" if q.grade in ("A", "B")
+                else "warning" if q.grade == "C"
+                else "danger"
+            )
+            stat_grid([
+                {"label": "Quality", "value": q.grade,
+                 "sub": f"score {q.score}/100", "tone": grade_tone},
+                {"label": "Work rows", "value": len(rpt.work_progress),
+                 "sub": f"{A.fmt_count(mp.buildings_with_crew)} building(s) · "
+                        f"{act.distinct} activities"},
+                {"label": "Manpower", "value": A.fmt_count(mp.total),
+                 "sub": f"{mp.skilled} skilled · {mp.helpers} helpers"},
+                {"label": "Avg progress",
+                 "value": A.fmt_pct(prog.avg_pct) if prog.reported else "—",
+                 "sub": (f"{prog.reported}/{prog.total_rows} reported"
+                         if prog.reported else "none reported")},
+            ])
+
+            _render_risk_section()
+            _render_production_panel(rpt)
+
+            with ui.tabs().classes("w-full dpr-tabs").props("align=left") as tabs:
+                ui.tab("Overview", icon="dashboard")
+                ui.tab("Layout",   icon="grid_view")
+                ui.tab("Quality",  icon="verified")
+                ui.tab("Detailed", icon="table_view")
+
+            with ui.tab_panels(tabs, value="Overview").classes(
+                "w-full"
+            ).style("background: transparent; padding: 0;"):
+                with ui.tab_panel("Overview").style("padding: 12px 0 0 0;"):
+                    _overview_tab(rpt, mp, act, prog)
+                with ui.tab_panel("Layout").style("padding: 12px 0 0 0;"):
+                    _layout_tab(rpt)
+                with ui.tab_panel("Quality").style("padding: 12px 0 0 0;"):
+                    _quality_tab(rpt, q)
+                with ui.tab_panel("Detailed").style("padding: 12px 0 0 0;"):
+                    _detailed_tab(rpt)
 
 
 def _empty() -> None:
