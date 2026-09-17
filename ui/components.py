@@ -1,11 +1,4 @@
-"""Reusable widgets — sections, tables, bars, histograms, matrices.
-
-Current pass:
-  - bar_list() gains an optional `total_override` so the Activity
-    Breakdown panel can show "places per activity / total distinct
-    places" percentages instead of crew-based shares.
-  - Everything else from the previous pass unchanged.
-"""
+"""Reusable widgets — sections, tables, bars, histograms, matrices."""
 from __future__ import annotations
 from html import escape
 
@@ -239,14 +232,6 @@ def panel(title: str, *, subtitle: str = "", total: str = "",
 def bar_list(items: list[tuple[str, float | int]],
              *, unit: str = "", show_pct: bool = True,
              total_override: float | None = None) -> None:
-    """Bar list.
-
-    `total_override` — when set, the displayed percentage is
-    value / total_override * 100 instead of value / sum(values) * 100.
-    Used by the Activity Breakdown panel where each activity's bar must
-    show its share of the DISTINCT PLACES on site, not of the sum of
-    activities.
-    """
     if not items:
         return
     if total_override is not None:
@@ -323,6 +308,13 @@ def histogram(buckets: list[tuple[str, int]]) -> None:
 
 
 def matrix_view(data: dict) -> None:
+    """Building × Activity matrix.
+
+    FIX: the container uses fixed column widths so it overflows and
+    scrolls horizontally instead of squishing the headers together.
+    Column header shows the activity name on top and "working floors"
+    underneath (CSS in _REPORT_CSS handles the stacking).
+    """
     acts = data["activities"]
     bldgs = data["buildings"]
     mat = data["matrix"]
@@ -330,12 +322,16 @@ def matrix_view(data: dict) -> None:
     if not acts or not bldgs:
         return
 
+    # Fixed column widths → grid overflows → parent scrolls on mobile
     grid_style = (
-        f"grid-template-columns: 40px repeat({len(acts)}, minmax(64px, 1fr));"
+        f"grid-template-columns: 52px repeat({len(acts)}, 96px);"
     )
     html = f'<div class="dpr-matrix" style="{grid_style}">'
 
+    # Corner cell
     html += '<div class="dpr-matrix-head"></div>'
+
+    # Activity headers with "working floors" beneath
     for a in acts:
         html += (
             f'<div class="dpr-matrix-head dpr-matrix-head-2line">'
@@ -344,6 +340,7 @@ def matrix_view(data: dict) -> None:
             f'</div>'
         )
 
+    # Rows
     for b in bldgs:
         html += f'<div class="dpr-matrix-row-head">B{escape(b)}</div>'
         for a in acts:
