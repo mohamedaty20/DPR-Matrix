@@ -20,7 +20,7 @@ from core.exporters.styles import EXPORT_THEME
 from core import summary as SUM
 
 
-GREEN  = colors.HexColor(EXPORT_THEME["title"])
+GREEN  = colors.HexColor("#C75A00")   # Caterpillar dark orange for PDF
 BLACK  = colors.HexColor(EXPORT_THEME["body"])
 GREY   = colors.HexColor("#888888")
 LIGHT  = colors.HexColor("#EEEEEE")
