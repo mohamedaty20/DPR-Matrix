@@ -63,7 +63,10 @@ class _TimerNoiseFilter(_logging.Filter):
 
 _logging.getLogger("nicegui").addFilter(_TimerNoiseFilter())
 
-
+app.add_static_files("/assets", "assets")
+apply_theme()
+install_client_js()
+_log("theme applied")
 
 
 @app.get("/healthz")
@@ -102,10 +105,7 @@ def test_gemini():
         )
 
 
-@ui.pageapp.add_static_files("/assets", "assets")
-apply_theme()
-install_client_js()
-_log("theme applied")("/")
+@ui.page("/")
 def index():
     render_home()
 
@@ -157,11 +157,6 @@ if __name__ in {"__main__", "__mp_main__"}:
             reload=False,
             show=False,
             storage_secret=settings.STORAGE_SECRET,
-            # ── Connection tuning ──────────────────────────────────
-            # Render's proxy drops idle websockets. The default 3s
-            # reconnect window is too short for a mobile network to
-            # re-handshake, so the client shows "connection lost" and
-            # the user retries uploads that actually succeeded.
             reconnect_timeout=15.0,
         )
         _log("ui.run() returned cleanly")
