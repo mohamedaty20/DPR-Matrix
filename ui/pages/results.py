@@ -36,7 +36,6 @@ from ui.components import (
 # ═══════════════════════════════════════════════════════════════════════════
 _REPORT_CSS = """
 <style>
-/* ── Floating toggle (left side, below topbar) ─────────────────── */
 .dpr-drawer-toggle {
   position: fixed;
   top: 62px;
@@ -46,8 +45,8 @@ _REPORT_CSS = """
   height: 38px;
   border-radius: 10px;
   background: #0c0c0f;
-  border: 1px solid rgba(34,197,94,0.42);
-  color: #22c55e;
+  border: 1px solid rgba(242,116,12,0.42);
+  color: #F2740C;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -58,14 +57,13 @@ _REPORT_CSS = """
   box-shadow: 0 2px 14px rgba(0,0,0,0.55);
 }
 .dpr-drawer-toggle:hover {
-  border-color: rgba(34,197,94,0.85);
-  background: rgba(34,197,94,0.06);
+  border-color: rgba(242,116,12,0.85);
+  background: rgba(242,116,12,0.06);
 }
 @media (min-width: 820px) {
   .dpr-drawer-toggle { left: 248px; }
 }
 
-/* ── Drawer (slides in from LEFT) ──────────────────────────────── */
 .dpr-drawer {
   position: fixed;
   top: 0;
@@ -74,7 +72,7 @@ _REPORT_CSS = """
   width: 340px;
   max-width: 92vw;
   background: linear-gradient(180deg, #0c0c0f 0%, #06060a 100%);
-  border-right: 1px solid rgba(34,197,94,0.28);
+  border-right: 1px solid rgba(242,116,12,0.28);
   box-shadow: 10px 0 40px rgba(0,0,0,0.7);
   transform: translateX(-105%);
   transition: transform .22s ease;
@@ -106,11 +104,11 @@ _REPORT_CSS = """
   justify-content: space-between;
   margin-bottom: 14px;
   padding-bottom: 12px;
-  border-bottom: 1px solid rgba(34,197,94,0.18);
+  border-bottom: 1px solid rgba(242,116,12,0.18);
   gap: 8px;
 }
 .dpr-drawer-title {
-  color: #22c55e;
+  color: #F2740C;
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -119,7 +117,7 @@ _REPORT_CSS = """
 .dpr-drawer-close {
   background: transparent;
   color: #85858c;
-  border: 1px solid rgba(34,197,94,0.28);
+  border: 1px solid rgba(242,116,12,0.28);
   border-radius: 8px;
   width: 30px;
   height: 30px;
@@ -133,57 +131,38 @@ _REPORT_CSS = """
   padding: 0;
 }
 .dpr-drawer-close:hover {
-  color: #22c55e;
-  border-color: rgba(34,197,94,0.7);
+  color: #F2740C;
+  border-color: rgba(242,116,12,0.7);
 }
 
-/* ── Force visible text inside the drawer ──────────────────────── */
+/* Force visible text in drawer + report header */
 .dpr-drawer .q-field__native,
 .dpr-drawer .q-field__native input,
 .dpr-drawer .q-field__native textarea,
-.dpr-drawer .q-field__input,
-.dpr-drawer input.q-field__native,
-.dpr-drawer textarea.q-field__native,
-.dpr-drawer input,
-.dpr-drawer textarea {
+.dpr-drawer input, .dpr-drawer textarea,
+.dpr-report-header .q-field__native,
+.dpr-report-header .q-field__native input,
+.dpr-report-header input, .dpr-report-header textarea,
+.q-field__native, .q-field__native input, .q-field__native textarea,
+input.q-field__native, textarea.q-field__native {
   color: #e8e8ea !important;
-  caret-color: #22c55e !important;
   -webkit-text-fill-color: #e8e8ea !important;
+  caret-color: #F2740C !important;
   font-size: 12.5px !important;
 }
 .dpr-drawer .q-field__native::placeholder,
-.dpr-drawer .q-field__native::-webkit-input-placeholder,
 .dpr-drawer input::placeholder,
-.dpr-drawer textarea::placeholder {
+.dpr-report-header input::placeholder {
   color: #4f4f56 !important;
   -webkit-text-fill-color: #4f4f56 !important;
 }
-.dpr-drawer .q-field__label,
-.dpr-drawer .q-field__label *,
-.dpr-drawer .q-field__bottom,
-.dpr-drawer .q-field__messages {
-  color: #85858c !important;
-}
-.dpr-drawer .q-field__control {
+.dpr-drawer .q-field__control,
+.dpr-report-header .q-field__control {
   background: #121216 !important;
-}
-.dpr-drawer .q-field__control:before,
-.dpr-drawer .q-field__control:after {
-  border-color: rgba(34,197,94,0.28) !important;
-}
-.dpr-drawer .q-field--focused .q-field__control:after {
-  border-color: #22c55e !important;
 }
 .dpr-drawer .q-uploader {
   background: #121216 !important;
-  border-color: rgba(34,197,94,0.28) !important;
-}
-.dpr-drawer .q-uploader__header,
-.dpr-drawer .q-uploader__title,
-.dpr-drawer .q-uploader__subtitle {
-  color: #85858c !important;
-  background: transparent !important;
-  font-size: 11px !important;
+  border-color: rgba(242,116,12,0.28) !important;
 }
 
 .dpr-proj-logo {
@@ -195,7 +174,7 @@ _REPORT_CSS = """
   border-radius: 6px;
   background: #050506;
   padding: 8px;
-  border: 1px solid rgba(34,197,94,0.18);
+  border: 1px solid rgba(242,116,12,0.18);
 }
 .dpr-proj-field { margin-bottom: 10px; }
 .dpr-proj-label {
@@ -208,7 +187,6 @@ _REPORT_CSS = """
   margin-bottom: 4px;
 }
 
-/* ── Main content ──────────────────────────────────────────────── */
 .dpr-report-main {
   display: flex;
   flex-direction: column;
@@ -218,7 +196,7 @@ _REPORT_CSS = """
 }
 .dpr-report-header {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
-  border: 1px solid rgba(34,197,94,0.20);
+  border: 1px solid rgba(242,116,12,0.20);
   border-radius: 12px;
   padding: 14px 16px;
 }
@@ -238,15 +216,15 @@ _REPORT_CSS = """
   align-items: center;
   margin-top: 10px;
   padding-top: 10px;
-  border-top: 1px solid rgba(34,197,94,0.10);
+  border-top: 1px solid rgba(242,116,12,0.10);
 }
 .dpr-mini-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  background: rgba(34,197,94,0.08);
-  border: 1px solid rgba(34,197,94,0.20);
+  background: rgba(242,116,12,0.08);
+  border: 1px solid rgba(242,116,12,0.20);
   border-radius: 999px;
   font-size: 10.5px;
   color: #85858c;
@@ -279,16 +257,15 @@ _REPORT_CSS = """
 .dpr-tabs .q-tab__label { font-size: 11.5px !important; }
 .dpr-tabs .q-tab__icon { font-size: 16px !important; }
 
-/* ── Summary tab styling ──────────────────────────────────────── */
 .dpr-sum-card {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
-  border: 1px solid rgba(34,197,94,0.20);
+  border: 1px solid rgba(242,116,12,0.20);
   border-radius: 12px;
   padding: 16px 18px;
   margin-bottom: 14px;
 }
 .dpr-sum-title {
-  color: #22c55e;
+  color: #F2740C;
   font-size: 10.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -304,17 +281,17 @@ _REPORT_CSS = """
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-weight: 600;
-  border-bottom: 1px solid rgba(34,197,94,0.15);
+  border-bottom: 1px solid rgba(242,116,12,0.15);
 }
 .dpr-sum-table th.num { text-align: right; }
 .dpr-sum-table td {
   padding: 7px 10px;
   color: #e8e8ea;
   font-size: 12px;
-  border-bottom: 1px solid rgba(34,197,94,0.06);
+  border-bottom: 1px solid rgba(242,116,12,0.06);
 }
 .dpr-sum-table td.num { text-align: right; color: #c8c8cc; font-size: 11.5px; }
-.dpr-sum-table td.crew { text-align: right; color: #22c55e; font-weight: 700; font-size: 12px; }
+.dpr-sum-table td.crew { text-align: right; color: #F2740C; font-weight: 700; font-size: 12px; }
 .dpr-sum-table td.pct { color: #4f4f56; font-size: 10px; margin-left: 6px; }
 </style>
 """
