@@ -55,7 +55,10 @@ body, .q-page, .q-card, .q-btn, .q-field, .q-item, .q-label,
 .dpr-zone-stage-badge, .dpr-zone-meta, .dpr-zone-empty, .dpr-zone-row,
 .dpr-sum-card, .dpr-sum-title, .dpr-sum-table,
 .dpr-report-main, .dpr-report-header, .dpr-proj-field,
-.dpr-proj-label, .dpr-proj-logo {
+.dpr-proj-label, .dpr-proj-logo,
+.dpr-nav-section-label, .dpr-nav-proj-name, .dpr-nav-proj-meta,
+.dpr-nav-empty, .dpr-site-footer, .dpr-site-footer-title,
+.dpr-site-footer-text, .dpr-site-footer-copy, .dpr-site-footer-inner {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace !important;
 }
 
@@ -343,6 +346,51 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 .dpr-nav-icon { font-size: 18px !important; }
 .dpr-nav-label { font-size: 13px !important; font-weight: 500; }
 
+/* ── Projects list in the sidebar (item 4) ─────────────────────── */
+.dpr-nav-section-label {
+  color: var(--dpr-text-dim) !important;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding: 18px 12px 6px 12px;
+}
+.dpr-nav-projects {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 0 4px;
+}
+.dpr-nav-proj-item {
+  padding: 8px 10px;
+  border-radius: var(--dpr-radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background-color .12s ease, border-color .12s ease;
+}
+.dpr-nav-proj-item:hover {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--dpr-border);
+}
+.dpr-nav-proj-name {
+  color: var(--dpr-text) !important;
+  font-size: 12.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dpr-nav-proj-meta {
+  color: var(--dpr-text-dim) !important;
+  font-size: 10px;
+  margin-top: 2px;
+  letter-spacing: 0.04em;
+}
+.dpr-nav-empty {
+  color: var(--dpr-text-dim) !important;
+  font-size: 11px;
+  line-height: 1.55;
+  padding: 6px 12px 12px 12px;
+}
+
 .dpr-page-header { padding: 24px 28px 8px 28px; display: flex;
   flex-direction: column; gap: 4px; }
 .dpr-page-body { padding: 16px 28px 40px 28px; display: flex;
@@ -353,6 +401,32 @@ a:hover { color: var(--dpr-primary-dim) !important; }
 .dpr-page-subtitle { color: var(--dpr-text-muted) !important;
   font-size: 13px !important; line-height: 1.55; margin: 2px 0 0 0;
   max-width: 780px; }
+
+/* ── Site footer (item 25) ─────────────────────────────────────── */
+.dpr-site-footer {
+  padding: 26px 28px 40px 28px;
+  border-top: 1px solid var(--dpr-border);
+  margin-top: 24px;
+}
+.dpr-site-footer-inner {
+  max-width: 900px; margin: 0 auto; text-align: center;
+}
+.dpr-site-footer-title {
+  color: var(--dpr-primary) !important;
+  font-weight: 700; font-size: 13px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  margin-bottom: 12px;
+}
+.dpr-site-footer-text {
+  color: var(--dpr-text-muted) !important;
+  font-size: 12px; line-height: 1.7;
+  margin: 8px auto; max-width: 720px;
+}
+.dpr-site-footer-cta { color: var(--dpr-text) !important; }
+.dpr-site-footer-copy {
+  color: var(--dpr-text-dim) !important;
+  font-size: 11px; letter-spacing: 0.04em; margin-top: 18px;
+}
 
 @media (max-width: 820px) {
   .dpr-shell { grid-template-columns: 1fr; }
@@ -366,6 +440,23 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   .dpr-shell-topbar { padding: 0 16px; }
   .dpr-page-header { padding: 18px 16px 8px 16px; }
   .dpr-page-body { padding: 12px 16px 32px 16px; }
+
+  /* On mobile the projects list becomes a horizontal strip of pills */
+  .dpr-nav-section-label { display: block; padding: 12px 4px 6px 4px; }
+  .dpr-nav-projects {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 0 0 8px 0;
+  }
+  .dpr-nav-proj-item {
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    background: rgba(255,255,255,0.02);
+    border-color: var(--dpr-border);
+  }
+  .dpr-nav-proj-meta { display: none; }
+  .dpr-site-footer { padding: 20px 16px 32px 16px; }
 }
 
 .dpr-stat-grid { display: grid;
@@ -548,11 +639,7 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   border-radius: var(--dpr-radius); }
 .dpr-zone-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-/* ═══════════════════════════════════════════════════════════════
-   Phase 1 — Fluid typography & mobile breakpoint
-   (appended; overrides are additive — nothing above is removed)
-   ═══════════════════════════════════════════════════════════════ */
-
+/* ── Fluid typography ──────────────────────────────────────────── */
 .dpr-app-title     { font-size: clamp(20px, 3.6vw, 26px) !important; }
 .dpr-app-subtitle  { font-size: clamp(12px, 1.7vw, 13px) !important; }
 .dpr-page-title    { font-size: clamp(18px, 3.0vw, 22px) !important; }
