@@ -1,5 +1,7 @@
-"""Home — upload queue, live job status, aggregate, cancel."""
+"""Home — compact drop zone, tight queue, prominent Run button."""
 from __future__ import annotations
+
+from html import escape
 
 from nicegui import ui, run
 
@@ -10,126 +12,283 @@ from core.errors import DPRMatrixError
 from core.extractors.router import route
 from ui import state
 from ui.shell import page_shell
-from ui.components import section_title, log_console
 from utils.files import validate_upload
 
 
-_BADGE_LABEL = {
-    "queued":     "Queued",
-    "extracting": "Extracting",
-    "done":       "Done",
-    "error":      "Error",
+_AGGREGATE_TIMEOUT_SEC = 600.0
+
+
+_HOME_CSS = """
+<style>
+.dpr-drop-zone {
+  border: 1.5px dashed rgba(34,197,94,0.35);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
+  padding: 20px;
+  text-align: center;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.dpr-drop-zone:hover {
+  border-color: rgba(34,197,94,0.6);
+  background: rgba(34,197,94,0.02);
+}
+.dpr-drop-icon {
+  font-size: 28px;
+  color: #22c55e;
+  opacity: 0.75;
+  display: block;
+  margin-bottom: 6px;
+  line-height: 1;
+}
+.dpr-drop-title {
+  color: #e8e8ea;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.dpr-drop-hint {
+  color: #85858c;
+  font-size: 11px;
+  line-height: 1.5;
+}
+/* Hide Quasar uploader's built-in chrome — we render our own queue */
+.dpr-drop-zone .q-uploader {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  width: 100% !important;
+}
+.dpr-drop-zone .q-uploader__header { display: none !important; }
+.dpr-drop-zone .q-uploader__list { display: none !important; }
+
+.dpr-q-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+}
+.dpr-q-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 12px;
+  background: #0c0c0f;
+  border: 1px solid rgba(34,197,94,0.14);
+  border-radius: 8px;
+  font-size: 12px;
+  min-height: 36px;
+}
+.dpr-q-name {
+  color: #e8e8ea;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.dpr-q-size {
+  color: #4f4f56;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.dpr-q-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.dpr-q-queued     { color: #85858c; border-color: rgba(133,133,140,0.35); }
+.dpr-q-extracting { color: #ffb020; border-color: rgba(255,176,32,0.4); }
+.dpr-q-done       { color: #22c55e; border-color: rgba(34,197,94,0.4); }
+.dpr-q-error      { color: #ff4d6a; border-color: rgba(255,77,106,0.4); }
+
+.dpr-q-remove.q-btn {
+  min-height: 22px !important;
+  height: 22px !important;
+  width: 22px !important;
+  min-width: 22px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  border-color: transparent !important;
+  color: #4f4f56 !important;
+}
+.dpr-q-remove.q-btn:hover {
+  color: #ff4d6a !important;
+  background: rgba(255,77,106,0.08) !important;
+  border-color: rgba(255,77,106,0.4) !important;
 }
 
-_AGGREGATE_TIMEOUT_SEC = 600.0
+.dpr-q-empty {
+  color: #4f4f56;
+  font-size: 12px;
+  text-align: center;
+  padding: 14px 0;
+  font-style: italic;
+}
+
+.dpr-action-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(34,197,94,0.04);
+  border: 1px solid rgba(34,197,94,0.20);
+  border-radius: 12px;
+  margin-top: 12px;
+}
+.dpr-action-bar-info {
+  flex: 1;
+  color: #85858c;
+  font-size: 11.5px;
+  min-width: 140px;
+}
+.dpr-action-bar-info b {
+  color: #e8e8ea;
+  font-weight: 600;
+}
+.dpr-action-bar-info .err { color: #ff4d6a; font-weight: 700; }
+</style>
+"""
 
 
 def render() -> None:
     with page_shell(
         active="home",
         title="Upload & Aggregate",
-        subtitle="Upload site reports (PDF · XLSX · XLS · PNG · JPG · TXT). "
-                 "Each file is extracted independently, then merged "
-                 "deterministically into a single Daily Progress Report.",
+        subtitle="Drop site reports. Nothing runs until you click Aggregate.",
     ):
+        ui.add_head_html(_HOME_CSS, shared=False)
         _body()
 
 
 def _body() -> None:
-    session_label = ui.label("").classes("dpr-muted")
-
-    def refresh_session_label() -> None:
-        q = state.queue_files()
-        done = sum(1 for f in q if f["status"] == "done")
-        session_label.text = (
-            f"{len(q)} / {settings.MAX_FILES} file(s) queued · {done} completed · "
-            f"report: {'ready' if state.report() else 'none'}"
-        )
-
-    @ui.refreshable
-    def file_queue_panel() -> None:
-        q = state.queue_files()
-        if not q:
-            ui.label("No files queued yet — drop them above.").classes("dpr-muted")
-            return
-        with ui.column().classes("w-full gap-2"):
-            for f in q:
-                with ui.row().classes(
-                    "dpr-queue-row items-center w-full gap-3 no-wrap"
-                ):
-                    ui.label(f["name"]).classes("dpr-queue-name")
-                    ui.label(f"{f['size'] / 1024:.1f} KB").classes("dpr-queue-size")
-                    label = _BADGE_LABEL.get(f["status"], f["status"])
-                    ui.label(label).classes(f"dpr-badge dpr-badge-{f['status']}")
-                    ui.button(
-                        icon="close",
-                        on_click=lambda t=f["token"]: _remove_file(t),
-                    ).props("flat dense round size=sm").classes("dpr-icon-btn")
-
-    def _remove_file(token: str) -> None:
-        state.remove_queued(token)
-        file_queue_panel.refresh()
-        refresh_session_label()
-
+    # ═══════════════════════════════════════════════════════════════
+    # Upload handler
+    # ═══════════════════════════════════════════════════════════════
     async def handle_upload(e) -> None:
         filename = e.name
         try:
             if len(state.queue_files()) >= settings.MAX_FILES:
                 raise DPRMatrixError(
                     f"Queue is at the {settings.MAX_FILES}-file limit. "
-                    f"Remove a file or click Aggregate to proceed."
+                    f"Remove a file or aggregate first."
                 )
             data = e.content.read()
             validate_upload(filename, data)
+
+            # Dedupe by (name, size) within this session's queue —
+            # protects against the mobile-browser retry storm that
+            # happens when the websocket blips during upload.
+            for existing in state.queue_files():
+                if (existing["name"] == filename
+                        and existing["size"] == len(data)
+                        and existing["status"] in ("queued", "extracting", "done")):
+                    ui.notify(f"{filename} already queued",
+                              color="orange", position="top")
+                    return
+
             state.enqueue(filename, data, e.type or "")
             state.log(f"[queue] + {filename} ({len(data)} bytes)")
-            ui.notify(f"Queued {filename}", color="green")
-            file_queue_panel.refresh()
-            refresh_session_label()
+            ui.notify(f"Queued {filename}", color="green", position="top")
+            _refresh_all()
         except DPRMatrixError as ex:
             state.log(f"[err] {filename}: {ex}")
-            ui.notify(str(ex), color="red")
+            ui.notify(str(ex), color="red", position="top")
         except Exception as ex:
             state.log(f"[err] {filename}: {type(ex).__name__}: {ex}")
-            ui.notify(f"Unexpected error: {ex}", color="red")
+            ui.notify(f"Upload failed: {ex}", color="red", position="top")
 
-    with ui.card().classes("dpr-card w-full"):
-        section_title("1 · Upload")
+    # ═══════════════════════════════════════════════════════════════
+    # Drop zone
+    # ═══════════════════════════════════════════════════════════════
+    with ui.element("div").classes("dpr-drop-zone"):
+        ui.html(
+            '<span class="dpr-drop-icon">⬆</span>'
+            '<div class="dpr-drop-title">Drop site reports here</div>'
+            f'<div class="dpr-drop-hint">'
+            f'PDF · XLSX · XLS · PNG · JPG · TXT · '
+            f'{settings.MAX_FILES} files max, {settings.MAX_UPLOAD_MB} MB each'
+            f'</div>'
+        )
         ui.upload(
-            label="Drop site reports here (multiple allowed)",
+            label="",
             on_upload=handle_upload,
             multiple=True,
             auto_upload=True,
             max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
-        ).props("accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt").classes("w-full")
-        ui.label(
-            f"Files are validated on drop and queued — nothing runs until you "
-            f"click Aggregate. Up to {settings.MAX_FILES} files, "
-            f"{settings.MAX_UPLOAD_MB} MB each."
-        ).classes("dpr-muted").style("margin-top: 10px;")
+        ).props(
+            'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt flat bordered'
+        ).classes("w-full").style("margin-top: 10px;")
 
-    with ui.card().classes("dpr-card w-full"):
-        section_title("2 · Queue")
-        file_queue_panel()
-        refresh_session_label()
+    # ═══════════════════════════════════════════════════════════════
+    # Queue
+    # ═══════════════════════════════════════════════════════════════
+    @ui.refreshable
+    def queue_panel() -> None:
+        q = state.queue_files()
+        if not q:
+            ui.html('<div class="dpr-q-empty">'
+                    'Queue is empty — drop files above.</div>')
+            return
 
+        with ui.element("div").classes("dpr-q-list"):
+            for f in q:
+                status = f.get("status", "queued")
+                with ui.element("div").classes("dpr-q-row"):
+                    ui.html(
+                        f'<span class="dpr-q-name">{escape(f["name"])}</span>'
+                    )
+                    size_kb = f["size"] / 1024
+                    size_txt = (
+                        f'{size_kb:.1f} KB' if size_kb < 1024
+                        else f'{size_kb / 1024:.1f} MB'
+                    )
+                    ui.html(f'<span class="dpr-q-size">{size_txt}</span>')
+                    ui.html(
+                        f'<span class="dpr-q-status dpr-q-{status}">'
+                        f'{status}</span>'
+                    )
+                    ui.button(
+                        icon="close",
+                        on_click=lambda t=f["token"]: _remove_file(t),
+                    ).props("flat dense round").classes("dpr-q-remove")
+
+    def _remove_file(token: str) -> None:
+        state.remove_queued(token)
+        _refresh_all()
+
+    def _refresh_all() -> None:
+        queue_panel.refresh()
+        action_bar.refresh()
+
+    # ═══════════════════════════════════════════════════════════════
+    # Aggregate job
+    # ═══════════════════════════════════════════════════════════════
     running = {"active": False}
+    btns = {"run": None, "cancel": None}
 
     async def run_aggregate() -> None:
         if running["active"]:
             return
         q = state.queue_files()
         if not q:
-            ui.notify("Queue is empty", color="orange")
+            ui.notify("Queue is empty", color="orange", position="top")
             return
 
         running["active"] = True
-        run_btn.disable()
-        cancel_btn.enable()
+        if btns["run"]: btns["run"].disable()
+        if btns["cancel"]: btns["cancel"].enable()
         state.clear_cancel()
         state.reset()
         state.log(f"[run] starting job on {len(q)} file(s)")
-        ui.notify("Running…", color="green")
+        ui.notify("Running…", color="green", position="top")
+        _refresh_all()
 
         try:
             docs: list = []
@@ -137,11 +296,10 @@ def _body() -> None:
             for i, f in enumerate(q, start=1):
                 if state.is_cancelled():
                     state.log(f"[cancel] aborted at {i}/{total}")
-                    ui.notify("Cancelled", color="orange")
+                    ui.notify("Cancelled", color="orange", position="top")
                     return
                 state.set_status(f["token"], "extracting")
-                file_queue_panel.refresh()
-                refresh_session_label()
+                _refresh_all()
                 state.log(f"[text] {i}/{total} · {f['name']}")
                 try:
                     data = state.get_bytes(f["token"])
@@ -155,16 +313,16 @@ def _body() -> None:
                     state.set_status(f["token"], "error", str(ex))
                     state.log(f"[text] fail · {f['name']}: "
                               f"{type(ex).__name__}: {ex}")
-                file_queue_panel.refresh()
+                _refresh_all()
 
             if state.is_cancelled():
                 state.log("[cancel] aborted before merge")
-                ui.notify("Cancelled", color="orange")
+                ui.notify("Cancelled", color="orange", position="top")
                 return
 
             if not docs:
-                state.log("[err] no documents extracted — nothing to aggregate")
-                ui.notify("Nothing to aggregate", color="red")
+                state.log("[err] no documents extracted")
+                ui.notify("Nothing to aggregate", color="red", position="top")
                 return
 
             state.set_docs(docs)
@@ -183,13 +341,12 @@ def _body() -> None:
 
             if report is None:
                 state.log("[cancel] aggregation cancelled")
-                ui.notify("Cancelled", color="orange")
+                ui.notify("Cancelled", color="orange", position="top")
                 return
 
             state.set_report(report)
             state.log(
-                f"[ok] report ready · project={report.project_name!r} · "
-                f"{len(report.work_progress)} work rows · "
+                f"[ok] report ready · {len(report.work_progress)} work rows · "
                 f"{len(report.conflicts)} conflict(s)"
             )
 
@@ -213,83 +370,145 @@ def _body() -> None:
             for f in state.queue_files():
                 if f["status"] != "error":
                     state.set_status(f["token"], "done")
-            file_queue_panel.refresh()
-            refresh_session_label()
-
+            _refresh_all()
             ui.navigate.to("/results")
 
         except Exception as ex:
             state.log(f"[err] job crashed: {type(ex).__name__}: {ex}")
-            ui.notify(f"Job failed: {ex}", color="red")
+            ui.notify(f"Job failed: {ex}", color="red", position="top")
         finally:
             running["active"] = False
-            run_btn.enable()
-            cancel_btn.disable()
-            refresh_session_label()
+            if btns["run"]: btns["run"].enable()
+            if btns["cancel"]: btns["cancel"].disable()
+            _refresh_all()
 
     def _cancel() -> None:
         state.request_cancel()
-        state.log("[cancel] requested — will stop after current file")
-        ui.notify("Cancelling…", color="orange")
-
-    with ui.card().classes("dpr-card w-full"):
-        section_title("3 · Run")
-        with ui.row().classes("gap-2 items-center"):
-            run_btn = ui.button("Aggregate", on_click=run_aggregate) \
-                .classes("dpr-btn-primary")
-            cancel_btn = ui.button("Cancel", on_click=_cancel) \
-                .classes("dpr-btn-danger")
-            cancel_btn.disable()
+        state.log("[cancel] requested")
+        ui.notify("Cancelling…", color="orange", position="top")
 
     def _clear_queue() -> None:
         state.clear_queue()
-        file_queue_panel.refresh()
-        refresh_session_label()
-        ui.notify("Queue cleared", color="green")
+        _refresh_all()
+        ui.notify("Queue cleared", color="green", position="top")
 
+    # ═══════════════════════════════════════════════════════════════
+    # Action bar
+    # ═══════════════════════════════════════════════════════════════
+    @ui.refreshable
+    def action_bar() -> None:
+        q = state.queue_files()
+        n = len(q)
+        done = sum(1 for f in q if f.get("status") == "done")
+        errored = sum(1 for f in q if f.get("status") == "error")
+
+        info_html = f'<b>{n}</b> file(s) queued'
+        if done:
+            info_html += f' · <b>{done}</b> done'
+        if errored:
+            info_html += f' · <span class="err">{errored} failed</span>'
+
+        with ui.element("div").classes("dpr-action-bar"):
+            ui.html(f'<div class="dpr-action-bar-info">{info_html}</div>')
+            btns["run"] = ui.button(
+                f"Aggregate {n} file{'s' if n != 1 else ''}"
+                if n else "Aggregate",
+                on_click=run_aggregate,
+            ).classes("dpr-btn-primary")
+            btns["cancel"] = ui.button("Cancel", on_click=_cancel).classes(
+                "dpr-btn-danger"
+            )
+            btns["cancel"].disable()
+            ui.button("Clear queue", on_click=_clear_queue)
+
+    # ═══════════════════════════════════════════════════════════════
+    # First render
+    # ═══════════════════════════════════════════════════════════════
+    queue_panel()
+    action_bar()
+
+    # ═══════════════════════════════════════════════════════════════
+    # Footer actions
+    # ═══════════════════════════════════════════════════════════════
     def _new_session() -> None:
         state.reset()
         state.clear_queue()
         state.clear_cancel()
-        ui.notify("Session cleared", color="green")
+        ui.notify("Session cleared", color="green", position="top")
         ui.navigate.to("/")
 
-    with ui.row().classes("gap-2 mt-2"):
+    with ui.row().classes("gap-2 mt-4 flex-wrap"):
         ui.button("History", on_click=lambda: ui.navigate.to("/history"))
-        ui.button("Clear Queue", on_click=_clear_queue)
+        ui.button("Zones board", on_click=lambda: ui.navigate.to("/zones"))
         ui.button("New Session", on_click=_new_session)
 
-    section_title("Activity Log", "Streaming status from the current run.")
-    log_console()
+    # ═══════════════════════════════════════════════════════════════
+    # Collapsible activity log
+    # ═══════════════════════════════════════════════════════════════
+    log_open = {"value": False}
 
+    with ui.element("div").classes("w-full").style("margin-top: 14px;"):
+        header = ui.element("button").style(
+            "background: transparent; border: 1px solid rgba(34,197,94,0.20);"
+            "color: #85858c; border-radius: 8px; padding: 7px 14px;"
+            "cursor: pointer; font-size: 10.5px; letter-spacing: 0.08em;"
+            "text-transform: uppercase; font-weight: 600;"
+        )
+        with header:
+            toggle_label = ui.html("▶ Activity log")
+
+        log_body = ui.element("div").style(
+            "display: none; margin-top: 10px;"
+        )
+        with log_body:
+            from ui.components import log_console
+            log_console()
+
+    def _toggle_log() -> None:
+        log_open["value"] = not log_open["value"]
+        log_body.style(
+            "display: block; margin-top: 10px;"
+            if log_open["value"]
+            else "display: none; margin-top: 10px;"
+        )
+        toggle_label.content = (
+            "▼ Activity log" if log_open["value"] else "▶ Activity log"
+        )
+
+    header.on("click", _toggle_log)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Event drain — 0.5 s. Lighter on mobile than 0.3 s.
+    # ═══════════════════════════════════════════════════════════════
     def _drain_events() -> None:
         events = state.drain_events()
         if not events:
             return
+        changed = False
         for kind, payload in events:
             if kind == "file_start":
-                state.log(
-                    f"[llm] {payload.get('index', '?')}/"
-                    f"{payload.get('total', '?')} · {payload.get('filename', '')}"
-                )
+                state.log(f"[llm] {payload.get('index','?')}/"
+                          f"{payload.get('total','?')} · "
+                          f"{payload.get('filename','')}")
             elif kind == "file_ok":
-                state.log(f"[llm] ok · {payload.get('filename', '')}")
+                state.log(f"[llm] ok · {payload.get('filename','')}")
             elif kind == "file_err":
-                err = payload.get("error", "")
-                name = payload.get("filename", "")
+                err = payload.get("error","")
+                name = payload.get("filename","")
                 state.log(f"[llm] fail · {name}: {err}")
                 for f in state.queue_files():
                     if f["name"] == name:
                         state.set_status(f["token"], "error", err)
+                changed = True
             elif kind == "merge_start":
                 state.log("[merge] deterministic Python merge…")
             elif kind == "done":
                 state.log("[merge] done")
             elif kind == "cancelled":
-                reason = payload.get("reason", "cancel")
-                phase = payload.get("phase", "?")
-                state.log(f"[cancel] aggregate stopped ({reason} · {phase})")
-        file_queue_panel.refresh()
-        refresh_session_label()
+                reason = payload.get("reason","cancel")
+                phase = payload.get("phase","?")
+                state.log(f"[cancel] stopped ({reason} · {phase})")
+        if changed:
+            _refresh_all()
 
-    ui.timer(0.3, _drain_events)
+    ui.timer(0.5, _drain_events)
