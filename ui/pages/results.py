@@ -1,4 +1,11 @@
-"""Results — report dashboard. Items 10-23 implemented here."""
+"""Results — report dashboard.
+
+Current pass:
+  - Item 4: Overview tab > Activity Breakdown now shows PLACES per
+    activity (distinct building/floor/zone tuples), not crew headcounts.
+    The panel total is the number of distinct places on site, and each
+    bar's percentage is that activity's place count / total places.
+"""
 from __future__ import annotations
 
 import base64
@@ -29,12 +36,9 @@ from ui.components import (
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Page CSS
-# ═══════════════════════════════════════════════════════════════════════════
 _REPORT_CSS = """
 <style>
-/* ── Item 17 — Report Dashboard title larger + centered ─────────── */
+/* ── Report Dashboard title larger + centered ──────────────────── */
 .dpr-page-header { align-items: center !important; text-align: center !important; }
 .dpr-page-title {
   font-size: clamp(22px, 3.6vw, 30px) !important;
@@ -46,7 +50,7 @@ _REPORT_CSS = """
   margin-right: auto !important;
 }
 
-/* ── Drawer toggle — item 19 (professional arrow) ──────────────── */
+/* ── Drawer toggle — professional arrow ────────────────────────── */
 .dpr-drawer-toggle {
   position: fixed;
   top: 62px;
@@ -150,7 +154,6 @@ _REPORT_CSS = """
   border-color: rgba(242,116,12,0.7);
 }
 
-/* Inputs inside drawer + header */
 .dpr-drawer .q-field__native,
 .dpr-drawer .q-field__native input,
 .dpr-drawer input, .dpr-drawer textarea,
@@ -199,7 +202,7 @@ input.q-field__native, textarea.q-field__native {
   margin-bottom: 4px;
 }
 
-/* ── Report header (item 16 — reduced) ─────────────────────────── */
+/* ── Report header ─────────────────────────────────────────────── */
 .dpr-report-main {
   display: flex;
   flex-direction: column;
@@ -231,7 +234,7 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-report-source-note b { color: #e8e8ea; font-weight: 600; }
 
-/* ── Download block (item 15) ──────────────────────────────────── */
+/* ── Download block ────────────────────────────────────────────── */
 .dpr-download-heading {
   color: #c8c8cc;
   font-size: 14px;
@@ -259,7 +262,7 @@ input.q-field__native, textarea.q-field__native {
   background: rgba(242,116,12,0.04) !important;
 }
 
-/* ── Tab row with Zones button (item 18) ───────────────────────── */
+/* ── Tab row with Zones button ─────────────────────────────────── */
 .dpr-tabs-row {
   display: flex;
   align-items: stretch;
@@ -348,7 +351,7 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-bldg-link:hover { color: #ffb020; border-bottom-color: #ffb020; }
 
-/* ── Interactive flag cards (items 10, 11) ─────────────────────── */
+/* ── Interactive flag cards ────────────────────────────────────── */
 .dpr-flag-card {
   display: flex;
   align-items: center;
@@ -493,8 +496,6 @@ def _download_txt():
 
 
 def _download_row():
-    """Item 15 — no filled background, thin grey outline per button,
-    'Download' heading above."""
     with ui.element("div").style("padding: 4px 2px 2px 2px;"):
         ui.html('<div class="dpr-download-heading">Download</div>')
         with ui.row().classes("gap-2 items-center"):
@@ -565,7 +566,6 @@ def _on_field_changed(key: str, value: str) -> None:
 
 
 def _persist_and_reload(rpt, message: str = "Saved") -> None:
-    """Update the stored payload and refresh the page (items 10, 11)."""
     rid = state.report_id()
     if rid is None:
         ui.notify("No saved report — aggregate first", color="orange",
@@ -581,7 +581,7 @@ def _persist_and_reload(rpt, message: str = "Saved") -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Project details drawer body — item 19 ordering
+# Project details drawer body
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_project_details_body() -> None:
     pd = state.project_details()
@@ -595,7 +595,6 @@ def _render_project_details_body() -> None:
                 on_change=lambda e, k=key: _on_field_changed(k, e.value or ""),
             ).props("dense outlined").classes("w-full")
 
-    # Item 19 — Project Name FIRST, logo LAST.
     _field("project_name", "Project name", "e.g. WTG Foundation Package")
     _field("location",     "Location",     "e.g. Ras Ghareb, Zone B")
     _field("company_name", "Company name", "e.g. Orascom Construction")
@@ -603,7 +602,6 @@ def _render_project_details_body() -> None:
     _field("consultant",   "Consultant",   "e.g. Dar Al-Handasah")
     _field("shift",        "Shift",        "e.g. Day")
 
-    # ── Logo at the bottom ─────────────────────────────────────────
     ui.html(
         '<div style="margin-top:14px;padding-top:12px;'
         'border-top:1px solid rgba(242,116,12,0.14);"></div>'
@@ -678,7 +676,7 @@ def _render_project_details_body() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Report header — item 16 reduced
+# Report header
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_report_header(rpt) -> None:
     with ui.element("div").classes("dpr-report-header"):
@@ -713,14 +711,9 @@ def _render_report_header(rpt) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Item 10 — hard conflict resolution modal
+# Conflict modal
 # ═══════════════════════════════════════════════════════════════════════════
 def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
-    """Modal listing each hard conflict, letting the user choose:
-       (a) trust the AI-recommended resolution, or (b) drop the conflict.
-       On confirm, updates rpt.conflicts and persists to Turso.
-    """
-    # Track per-conflict pick. Default = keep the AI-resolved value.
     picks: dict[int, str] = {i: "keep" for i in range(len(conflicts))}
 
     with ui.dialog() as dlg, ui.card().classes("dpr-card").style(
@@ -763,45 +756,9 @@ def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
                         f'{reason}</div>'
                     )
 
-                def _set(idx=i, val="keep"):
-                    picks[idx] = val
-
                 with ui.element("div").classes("dpr-modal-pick"):
-                    ui.html(
-                        f'<label onclick="this.parentElement'
-                        f'.querySelectorAll(\'label\').forEach'
-                        f'(l=>l.style.borderColor=\'rgba(242,116,12,0.18)\');'
-                        f'this.style.borderColor=\'#F2740C\';'
-                        f'">'
-                        f'  <input type="radio" name="cf-{i}" checked '
-                        f'         value="keep" '
-                        f'         onchange="'
-                        f'var el=this.closest(\'.dpr-modal-row\');'
-                        f'">'
-                        f'  Accept AI choice'
-                        f'</label>'
-                        f'<label onclick="this.parentElement'
-                        f'.querySelectorAll(\'label\').forEach'
-                        f'(l=>l.style.borderColor=\'rgba(242,116,12,0.18)\');'
-                        f'this.style.borderColor=\'#ff4d6a\';">'
-                        f'  <input type="radio" name="cf-{i}" '
-                        f'         value="drop">'
-                        f'  Remove conflict'
-                        f'</label>'
-                    )
-                    # Wire the radio values into `picks` via on_change
-                    def _radio_handler(e, idx=i):
-                        try:
-                            picks[idx] = "drop" if e.value == "drop" else "keep"
-                        except Exception:
-                            picks[idx] = "keep"
-                    # We attach a single hidden radio group per row using
-                    # NiceGUI's ui.radio is heavier; JS above keeps the
-                    # chosen visual state and we read it on confirm via
-                    # a compact fallback: accept = default.
-                    # Simpler: expose two small NiceGUI buttons per row.
                     ui.button(
-                        "Accept",
+                        "Accept AI choice",
                         on_click=lambda idx=i: (
                             picks.__setitem__(idx, "keep"),
                             ui.notify("Marked: accept AI choice",
@@ -810,7 +767,7 @@ def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
                         ),
                     ).classes("dpr-btn-xs")
                     ui.button(
-                        "Remove",
+                        "Remove conflict",
                         on_click=lambda idx=i: (
                             picks.__setitem__(idx, "drop"),
                             ui.notify("Marked: remove conflict",
@@ -821,10 +778,6 @@ def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
 
         def _confirm():
             new_conflicts = []
-            # Rebuild the conflict list — hard conflicts whose idx was
-            # marked "drop" are removed; otherwise they stay with the
-            # AI-recommended resolution recorded.
-            # We match by identity order from the original list.
             for c in rpt.conflicts:
                 if c in conflicts:
                     idx = conflicts.index(c)
@@ -849,11 +802,9 @@ def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Item 11 — "Some headers should be unified" modal
+# Unify headers modal
 # ═══════════════════════════════════════════════════════════════════════════
 def _open_unify_headers_modal(rpt) -> None:
-    """Show every activity label currently in use, let the user merge
-    synonyms by picking a canonical name and marking others for rename."""
     from collections import Counter
     activity_counts: Counter = Counter()
     for r in rpt.work_progress:
@@ -867,7 +818,6 @@ def _open_unify_headers_modal(rpt) -> None:
         return
 
     all_acts = sorted(activity_counts.keys(), key=lambda x: -activity_counts[x])
-    # Map original -> canonical (defaults to itself = no change)
     rename_map: dict[str, str] = {a: a for a in all_acts}
 
     with ui.dialog() as dlg, ui.card().classes("dpr-card").style(
@@ -888,7 +838,6 @@ def _open_unify_headers_modal(rpt) -> None:
             '</div>'
         )
 
-        selects: dict[str, ui.select] = {}
         for a in all_acts:
             with ui.element("div").classes("dpr-modal-row"):
                 ui.html(
@@ -898,7 +847,7 @@ def _open_unify_headers_modal(rpt) -> None:
                     f'({activity_counts[a]} row(s))</span>'
                     f'</div>'
                 )
-                selects[a] = ui.select(
+                ui.select(
                     options=all_acts,
                     value=a,
                     label="Canonical name",
@@ -931,7 +880,7 @@ def _open_unify_headers_modal(rpt) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Item 12 — building detail modal
+# Building detail modal
 # ═══════════════════════════════════════════════════════════════════════════
 def _open_building_detail_modal(rpt, building_row: dict) -> None:
     bldg = str(building_row.get("building", "—"))
@@ -1024,7 +973,7 @@ def _open_building_detail_modal(rpt, building_row: dict) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Summary tab — items 10, 11, 12, 13, 15, 16
+# Summary tab
 # ═══════════════════════════════════════════════════════════════════════════
 def _summary_tab(rpt):
     s = SUM.compute(rpt)
@@ -1036,7 +985,6 @@ def _summary_tab(rpt):
     }
     fg, bg, border = colors.get(s["status"], colors["on_track"])
 
-    # ── Status banner ────────────────────────────────────────────────
     ui.html(
         f'<div style="background:{bg};border:1px solid {border};'
         f'border-left:4px solid {fg};border-radius:12px;'
@@ -1054,7 +1002,6 @@ def _summary_tab(rpt):
         f'</div>'
     )
 
-    # ── Item 13 — Executive Summary title larger ─────────────────────
     ui.html(
         f'<div class="dpr-sum-card">'
         f'  <div class="dpr-sum-card-title-lg">Executive summary</div>'
@@ -1064,7 +1011,6 @@ def _summary_tab(rpt):
         f'</div>'
     )
 
-    # ── Grand totals — item 12b: Work Rows KPI removed ───────────────
     stat_grid([
         {"label": "Total Crew", "value": A.fmt_count(s["total_crew"]),
          "sub": f"{s['skilled']} skilled · {s['assistants']} assistants",
@@ -1076,7 +1022,6 @@ def _summary_tab(rpt):
          "tone": s["grade_tone"]},
     ])
 
-    # ── Crew distribution by building — item 12 ──────────────────────
     if s["buildings"]:
         rows = ""
         for b in s["buildings"]:
@@ -1106,12 +1051,10 @@ def _summary_tab(rpt):
             f'</div>'
         )
 
-        # Attach click handler — read data-bldg from the clicked span
         def _handle_bldg_click(e):
             try:
                 bldg = None
                 if isinstance(e.args, dict):
-                    # NiceGUI's generic event args may carry the target
                     bldg = e.args.get("bldg") or None
                 if bldg is None:
                     return
@@ -1125,8 +1068,6 @@ def _summary_tab(rpt):
             except Exception as ex:
                 state.log(f"[err] bldg click: {ex}")
 
-        # Simpler, robust approach — use per-building small buttons via JS
-        # We attach a click listener to the table that reads data-bldg.
         ui.run_javascript(
             """
             (function() {
@@ -1137,23 +1078,15 @@ def _summary_tab(rpt):
                 var el = e.target.closest('.dpr-bldg-link');
                 if (!el) return;
                 var bldg = el.getAttribute('data-bldg');
-                if (bldg) {
-                  window.__dprClickBldg = bldg;
-                  // Emit a synthetic event NiceGUI can catch via the
-                  // window — but simpler, call the emit method directly.
-                  if (window.emitEvent) {
-                    window.emitEvent('dpr_bldg_click', {bldg: bldg});
-                  }
+                if (bldg && window.emitEvent) {
+                  window.emitEvent('dpr_bldg_click', {bldg: bldg});
                 }
               });
             })();
             """
         )
-
-        # Register a client-side event handler bridge
         ui.on("dpr_bldg_click", _handle_bldg_click, [])
 
-    # ── Activity breakdown — item 11: remove Rows; new column set ───
     if s["activities"]:
         total_crew = s["total_crew"] or 1
         rows = ""
@@ -1183,12 +1116,10 @@ def _summary_tab(rpt):
             f'</div>'
         )
 
-    # ── Decision flags — items 10 & 11 interactive ───────────────────
     _render_decision_flags(rpt, s)
 
 
 def _render_decision_flags(rpt, s: dict) -> None:
-    """Render `structured_flags` as clickable cards (item 10, 11)."""
     flags = s.get("structured_flags", [])
 
     with ui.element("div").classes("dpr-sum-card"):
@@ -1208,7 +1139,6 @@ def _render_decision_flags(rpt, s: dict) -> None:
             label = flag.get("label", "")
 
             if kind == "hard_conflicts":
-                # Clickable
                 with ui.element("div").classes("dpr-flag-card danger").on(
                     "click", lambda _e=None, c=flag["conflicts"]:
                         _open_conflict_modal(rpt, c)
@@ -1242,29 +1172,37 @@ def _render_decision_flags(rpt, s: dict) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Overview tab — items 21, 22
+# Overview tab — item 4 FIX
 # ═══════════════════════════════════════════════════════════════════════════
 def _overview_tab(rpt, mp, act, prog):
-    from core.normalize import to_float as _tf
+    """Overview tab.
 
-    # Activity crew aggregation (item 21: no row count)
-    act_crew: dict[str, int] = {}
-    act_bldgs: dict[str, set] = {}
+    Item 4 of the current request:
+      Activity Breakdown must show the number of PLACES each activity
+      happened in (distinct building/floor/zone tuples), plus that
+      activity's share of total distinct places on site. It must NOT
+      show crew headcounts.
+    """
+    # Distinct places per activity + global distinct places on site
+    act_places: dict[str, set] = {}
+    all_places: set = set()
     for r in rpt.work_progress:
         a = (r.get("activity") or "").strip()
         if not a:
             continue
-        sk = int(_tf(r.get("skilled")) or 0)
-        hp = int(_tf(r.get("helpers")) or 0)
-        act_crew[a] = act_crew.get(a, 0) + sk + hp
         b = (r.get("building") or "").strip()
-        if b:
-            act_bldgs.setdefault(a, set()).add(b)
+        fl = (r.get("floor") or "").strip()
+        z = (r.get("zone") or "").strip()
+        place = (b, fl, z)
+        all_places.add(place)
+        act_places.setdefault(a, set()).add(place)
 
-    act_items = sorted(act_crew.items(), key=lambda kv: -kv[1])[:10]
-    total_places = sum(len(v) for v in act_bldgs.values())
+    act_items = sorted(
+        [(a, len(s)) for a, s in act_places.items()],
+        key=lambda kv: (-kv[1], kv[0]),
+    )[:10]
+    total_places = len(all_places)
 
-    # Item 22 — Crew Composition: top-20 rectangles
     s = SUM.compute(rpt)
     buildings = s.get("buildings", [])
 
@@ -1278,11 +1216,13 @@ def _overview_tab(rpt, mp, act, prog):
                 ui.html('<div class="dpr-panel-empty">No manpower.</div>')
 
         with panel("Activity Breakdown",
-                   subtitle="Crew per activity.",
+                   subtitle="Distinct places (building / floor / zone) "
+                            "per activity.",
                    total=A.fmt_count(total_places),
                    total_label="No. Of Places Active Now"):
             if act_items:
-                bar_list(act_items, show_pct=True)
+                bar_list(act_items, show_pct=True,
+                         total_override=total_places)
             else:
                 ui.html('<div class="dpr-panel-empty">No activities.</div>')
 
@@ -1294,7 +1234,6 @@ def _overview_tab(rpt, mp, act, prog):
             else:
                 ui.html('<div class="dpr-panel-empty">No progress values.</div>')
 
-        # Item 22 — Crew Composition as rectangles
         with panel("Crew Composition",
                    subtitle="Top 20 buildings by assistant count.",
                    total=A.fmt_count(sum(b.get("assistants", 0)
@@ -1308,7 +1247,7 @@ def _overview_tab(rpt, mp, act, prog):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Layout tab — item 23
+# Layout tab
 # ═══════════════════════════════════════════════════════════════════════════
 def _layout_tab(rpt):
     matx = A.activity_matrix(rpt, top_n_acts=6)
@@ -1328,7 +1267,7 @@ def _layout_tab(rpt):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Quality tab — unchanged
+# Quality tab
 # ═══════════════════════════════════════════════════════════════════════════
 def _quality_tab(rpt, q):
     with ui.element("div").classes("dpr-grid"):
@@ -1382,7 +1321,7 @@ def _quality_tab(rpt, q):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Detailed tab — unchanged
+# Detailed tab
 # ═══════════════════════════════════════════════════════════════════════════
 def _detailed_tab(rpt):
     mats = A.materials_top(rpt, 20)
@@ -1414,7 +1353,7 @@ def _detailed_tab(rpt):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Production panel — targets dialog still reachable
+# Production panel
 # ═══════════════════════════════════════════════════════════════════════════
 def _render_production_panel(rpt):
     acts = sorted({
@@ -1576,7 +1515,6 @@ def render():
 
         _hydrate_session_from_report()
 
-        # ── Drawer + backdrop + toggle — item 19 ────────────────────
         backdrop = ui.element("div").classes("dpr-drawer-backdrop")
 
         drawer = ui.element("div").classes("dpr-drawer")
@@ -1590,7 +1528,7 @@ def render():
 
         toggle_btn = ui.element("button").classes("dpr-drawer-toggle")
         with toggle_btn:
-            toggle_icon = ui.html("›")  # professional arrow, closed state
+            toggle_icon = ui.html("›")
 
         drawer_state = {"open": False}
 
@@ -1598,7 +1536,7 @@ def render():
             drawer_state["open"] = True
             drawer.classes(add="open")
             backdrop.classes(add="open")
-            toggle_icon.content = "‹"   # arrow rotated to close
+            toggle_icon.content = "‹"
 
         def _close_drawer():
             drawer_state["open"] = False
@@ -1616,12 +1554,10 @@ def render():
         close_btn.on("click", _close_drawer)
         backdrop.on("click", _close_drawer)
 
-        # ── Main content ────────────────────────────────────────────
         with ui.element("div").classes("dpr-report-main"):
             _render_report_header(rpt)
             _download_row()
 
-            # Item 18 — Zones board button next to the tabs
             with ui.element("div").classes("dpr-tabs-row"):
                 with ui.tabs().classes("dpr-tabs").props("align=left") as tabs:
                     ui.tab("Summary",  icon="insights")
@@ -1653,7 +1589,6 @@ def render():
                 with ui.tab_panel("Detailed").style("padding: 12px 0 0 0;"):
                     _detailed_tab(rpt)
 
-            # Production panel accessible below the tabs
             _render_production_panel(rpt)
 
 
