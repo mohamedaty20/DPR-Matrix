@@ -20,46 +20,60 @@ _AGGREGATE_TIMEOUT_SEC = 600.0
 
 _HOME_CSS = """
 <style>
-.dpr-drop-zone {
-  border: 1.5px dashed rgba(34,197,94,0.35);
-  border-radius: 12px;
-  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
-  padding: 20px;
-  text-align: center;
-  transition: border-color .15s ease, background-color .15s ease;
-}
-.dpr-drop-zone:hover {
-  border-color: rgba(34,197,94,0.6);
-  background: rgba(34,197,94,0.02);
-}
-.dpr-drop-icon {
-  font-size: 28px;
-  color: #22c55e;
-  opacity: 0.75;
-  display: block;
-  margin-bottom: 6px;
-  line-height: 1;
-}
-.dpr-drop-title {
-  color: #e8e8ea;
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 3px;
-}
-.dpr-drop-hint {
-  color: #85858c;
-  font-size: 11px;
-  line-height: 1.5;
-}
-/* Hide Quasar uploader's built-in chrome — we render our own queue */
-.dpr-drop-zone .q-uploader {
-  background: transparent !important;
-  border: none !important;
+/* Style the uploader to look like a drop zone — do NOT hide its header. */
+.dpr-drop-wrap .q-uploader {
+  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%) !important;
+  border: 1.5px dashed rgba(34,197,94,0.35) !important;
+  border-radius: 12px !important;
   box-shadow: none !important;
   width: 100% !important;
+  transition: border-color .15s ease, background-color .15s ease;
 }
-.dpr-drop-zone .q-uploader__header { display: none !important; }
-.dpr-drop-zone .q-uploader__list { display: none !important; }
+.dpr-drop-wrap .q-uploader:hover {
+  border-color: rgba(34,197,94,0.6) !important;
+  background: rgba(34,197,94,0.02) !important;
+}
+.dpr-drop-wrap .q-uploader__header {
+  background: transparent !important;
+  color: #e8e8ea !important;
+  padding: 16px 18px !important;
+  border: none !important;
+  min-height: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  cursor: pointer !important;
+}
+.dpr-drop-wrap .q-uploader__header-content {
+  flex: 1 !important;
+}
+.dpr-drop-wrap .q-uploader__title {
+  color: #e8e8ea !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  line-height: 1.3 !important;
+}
+.dpr-drop-wrap .q-uploader__subtitle {
+  color: #85858c !important;
+  font-size: 11px !important;
+  margin-top: 2px !important;
+  line-height: 1.4 !important;
+}
+.dpr-drop-wrap .q-uploader__list { display: none !important; }
+.dpr-drop-wrap .q-btn {
+  background: transparent !important;
+  color: #22c55e !important;
+  border: 1px solid rgba(34,197,94,0.4) !important;
+  border-radius: 8px !important;
+  min-height: 30px !important;
+  padding: 0 12px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+}
+.dpr-drop-wrap .q-btn:hover {
+  background: rgba(34,197,94,0.08) !important;
+  border-color: rgba(34,197,94,0.7) !important;
+}
 
 .dpr-q-list {
   display: flex;
@@ -116,6 +130,7 @@ _HOME_CSS = """
   border-radius: 6px !important;
   border-color: transparent !important;
   color: #4f4f56 !important;
+  background: transparent !important;
 }
 .dpr-q-remove.q-btn:hover {
   color: #ff4d6a !important;
@@ -182,9 +197,8 @@ def _body() -> None:
             data = e.content.read()
             validate_upload(filename, data)
 
-            # Dedupe by (name, size) within this session's queue —
-            # protects against the mobile-browser retry storm that
-            # happens when the websocket blips during upload.
+            # Dedupe by (name, size) — protects against mobile-browser
+            # retry storms when the websocket blips during upload.
             for existing in state.queue_files():
                 if (existing["name"] == filename
                         and existing["size"] == len(data)
@@ -205,26 +219,30 @@ def _body() -> None:
             ui.notify(f"Upload failed: {ex}", color="red", position="top")
 
     # ═══════════════════════════════════════════════════════════════
-    # Drop zone
+    # Drop zone — native Quasar uploader, themed to look like a zone.
+    # The uploader's own header is what handles clicks, so we style
+    # it rather than replacing it.
     # ═══════════════════════════════════════════════════════════════
-    with ui.element("div").classes("dpr-drop-zone"):
-        ui.html(
-            '<span class="dpr-drop-icon">⬆</span>'
-            '<div class="dpr-drop-title">Drop site reports here</div>'
-            f'<div class="dpr-drop-hint">'
-            f'PDF · XLSX · XLS · PNG · JPG · TXT · '
-            f'{settings.MAX_FILES} files max, {settings.MAX_UPLOAD_MB} MB each'
-            f'</div>'
-        )
+    with ui.element("div").classes("dpr-drop-wrap w-full"):
         ui.upload(
-            label="",
+            label="Drop site reports here — or click to browse",
             on_upload=handle_upload,
             multiple=True,
             auto_upload=True,
             max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
         ).props(
-            'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt flat bordered'
-        ).classes("w-full").style("margin-top: 10px;")
+            f'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt '
+            f'flat bordered '
+            f'no-thumbnails'
+        ).classes("w-full")
+
+    ui.html(
+        f'<div style="color:#4f4f56;font-size:11px;'
+        f'margin-top:8px;text-align:center;">'
+        f'Up to {settings.MAX_FILES} files · {settings.MAX_UPLOAD_MB} MB each · '
+        f'PDF · XLSX · XLS · PNG · JPG · TXT'
+        f'</div>'
+    )
 
     # ═══════════════════════════════════════════════════════════════
     # Queue
@@ -421,9 +439,6 @@ def _body() -> None:
             btns["cancel"].disable()
             ui.button("Clear queue", on_click=_clear_queue)
 
-    # ═══════════════════════════════════════════════════════════════
-    # First render
-    # ═══════════════════════════════════════════════════════════════
     queue_panel()
     action_bar()
 
@@ -478,7 +493,7 @@ def _body() -> None:
     header.on("click", _toggle_log)
 
     # ═══════════════════════════════════════════════════════════════
-    # Event drain — 0.5 s. Lighter on mobile than 0.3 s.
+    # Event drain
     # ═══════════════════════════════════════════════════════════════
     def _drain_events() -> None:
         events = state.drain_events()
