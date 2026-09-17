@@ -1,9 +1,4 @@
-"""Matplotlib scatter map — renders server-side, returns PNG + hotspots.
-
-The figure is drawn at a fixed pixel size (1000×600) so that data
-coordinates can be transformed to pixel coordinates and returned alongside
-the PNG. The UI overlays transparent clickable hotspots at those positions.
-"""
+"""Matplotlib scatter map — renders server-side, returns PNG + hotspots."""
 from __future__ import annotations
 
 import io
@@ -12,9 +7,8 @@ import matplotlib
 matplotlib.use("Agg")   # headless — no display server on Render
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.patches import FancyBboxPatch
-
-from core.normalize import to_float
+from matplotlib.lines import Line2D
+from matplotlib.ticker import MaxNLocator
 
 
 # ── Canvas ────────────────────────────────────────────────────────────────
@@ -30,7 +24,6 @@ TEXT       = "#e8e8ea"
 TEXT_DIM   = "#85858c"
 TEXT_FAINT = "#4f4f56"
 ORANGE     = "#F2740C"
-ORANGE_DIM = "#C75A00"
 
 STAGE_COLORS = {
     "not_started":   "#4f4f56",
@@ -59,20 +52,23 @@ STAGE_LABELS = {
 def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
     """
     Returns (png_bytes, hotspots).
+
     hotspots = [{"x_px": float, "y_px": float, "zone": dict}, ...]
-      · x_px / y_px are in IMAGE pixel space (origin top-left) so they can
-        be laid out with CSS `left: X%` / `top: Y%` on top of the <img>.
+      · x_px / y_px are in IMAGE pixel space (origin top-left) so the UI can
+        overlay clickable hotspots with CSS `left: X%` / `top: Y%`.
     """
     fig = Figure(figsize=(W_PX / DPI, H_PX / DPI), dpi=DPI, facecolor=BG)
     canvas = FigureCanvasAgg(fig)
     ax = fig.add_axes([0.075, 0.11, 0.80, 0.78])   # left, bottom, w, h
     ax.set_facecolor(BG)
 
-    # ── X data: building numbers, sorted ─────────────────────────────
-    sorted_zones = sorted(
-        zones,
-        key=lambda z: int(z["building"]) if z["building"].isdigit() else 10**9,
-    )
+    # Sort buildings numerically if possible
+    def _bkey(z):
+        b = z.get("building", "")
+        return int(b) if str(b).isdigit() else 10**9
+
+    sorted_zones = sorted(zones, key=_bkey)
+
     x_vals = list(range(len(sorted_zones)))
     x_labels = [z["building"] or z["id"] for z in sorted_zones]
     y_vals = [z["crew"] for z in sorted_zones]
@@ -82,45 +78,47 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
     y_max = max(y_vals + [1]) * 1.18
     ax.set_ylim(-y_max * 0.08, y_max)
 
-    # ── Grid ─────────────────────────────────────────────────────────
+    # Grid
     ax.grid(True, color=GRID, linewidth=0.6, alpha=0.9, linestyle="-")
     ax.set_axisbelow(True)
 
-    # ── Axes styling ─────────────────────────────────────────────────
+    # Spines / ticks
     for spine in ax.spines.values():
         spine.set_color(GRID)
         spine.set_linewidth(0.8)
     ax.tick_params(colors=TEXT_FAINT, labelsize=9, length=0)
+
     ax.set_xticks(x_vals)
     ax.set_xticklabels(
         [f"B{l}" for l in x_labels],
         fontsize=10, color=TEXT_DIM, fontweight="bold",
     )
     ax.set_xlim(-0.6, len(x_vals) - 0.4 if x_vals else 1)
-    ax.yaxis.set_major_locator(matplotlib.ticker.MaxNLocator(nbins=6))
+
+    ax.yaxis.set_major_locator(MaxNLocator(nbins=6))
     for lbl in ax.get_yticklabels():
         lbl.set_fontsize(9)
         lbl.set_color(TEXT_DIM)
         lbl.set_fontfamily("monospace")
 
-    # ── Axis labels ──────────────────────────────────────────────────
+    # Axis labels
     ax.set_xlabel(
-        "BUILDING", fontsize=9, color=TEXT_FAINT,
-        labelpad=8, fontweight="bold", letter_spacing=1.5,
+        "BUILDING",
+        fontsize=9, color=TEXT_FAINT, labelpad=8, fontweight="bold",
     )
     ax.set_ylabel(
-        "CREW ON SITE", fontsize=9, color=TEXT_FAINT,
-        labelpad=10, fontweight="bold",
+        "CREW ON SITE",
+        fontsize=9, color=TEXT_FAINT, labelpad=10, fontweight="bold",
     )
 
-    # ── Title (drawn as ax text so it stays inside the axes) ─────────
+    # Title (inside axes so it never clips)
     total_crew = sum(y_vals)
     ax.text(
         -0.045, 1.055,
         "SITE MANPOWER MAP",
         transform=ax.transAxes,
         fontsize=11, color=ORANGE, fontweight="bold",
-        letter_spacing=2.0, va="bottom",
+        va="bottom",
     )
     ax.text(
         -0.045, 1.012,
@@ -130,10 +128,9 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
         fontsize=8.5, color=TEXT_FAINT, va="bottom",
     )
 
-    # ── Scatter ──────────────────────────────────────────────────────
+    # Scatter
     for x, y, rows, stage in zip(x_vals, y_vals, row_vals, stages):
         color = STAGE_COLORS.get(stage, "#4f4f56")
-        # marker size = rows, bounded
         size = 120 + min(rows, 12) * 55
 
         ax.scatter(
@@ -145,7 +142,6 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
             linewidths=1.8,
             zorder=3,
         )
-        # Inner ring for polish
         ax.scatter(
             x, y,
             s=size * 0.28,
@@ -155,7 +151,6 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
             alpha=0.7,
             zorder=4,
         )
-        # Crew value above
         ax.text(
             x, y + y_max * 0.045,
             f"{y}",
@@ -164,9 +159,9 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
             zorder=5,
         )
 
-    # ── Legend ───────────────────────────────────────────────────────
-    present_stages = []
-    seen = set()
+    # Legend — one entry per stage that exists
+    present_stages: list[str] = []
+    seen: set[str] = set()
     for s in stages:
         if s not in seen:
             present_stages.append(s)
@@ -175,7 +170,6 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
     handles = []
     labels = []
     for s in present_stages:
-        from matplotlib.lines import Line2D
         handles.append(Line2D(
             [0], [0], marker="o", color="none",
             markerfacecolor=STAGE_COLORS[s],
@@ -198,17 +192,17 @@ def render_scatter(zones: list[dict]) -> tuple[bytes, list[dict]]:
     )
     leg.get_frame().set_linewidth(0.6)
 
-    # ── Render to PNG ────────────────────────────────────────────────
+    # Render
     canvas.draw()
     buf = io.BytesIO()
     fig.savefig(buf, format="png", facecolor=BG)
     png = buf.getvalue()
 
-    # ── Compute hotspot pixel positions ──────────────────────────────
-    hotspots = []
+    # Hotspot pixel positions
+    hotspots: list[dict] = []
     for x, y, z in zip(x_vals, y_vals, sorted_zones):
         px, py = ax.transData.transform((x, y))
-        y_css = H_PX - py   # matplotlib origin is bottom-left
+        y_css = H_PX - py   # matplotlib origin bottom-left → CSS top-left
         hotspots.append({
             "x_px": float(px),
             "y_px": float(y_css),
