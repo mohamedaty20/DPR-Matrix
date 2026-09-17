@@ -72,6 +72,12 @@ def healthz():
     return Response(content="ok", media_type="text/plain")
 
 
+@app.get("/ping")
+def ping():
+    """Client keepalive — keeps the HTTP connection warm on Render."""
+    return Response(content="pong", media_type="text/plain")
+
+
 @app.get("/test-gemini")
 def test_gemini():
     import httpx, time
@@ -138,6 +144,7 @@ def _safe_init_db() -> None:
 
 if __name__ in {"__main__", "__mp_main__"}:
     _safe_init_db()
+
     _log("about to call ui.run()")
     try:
         ui.run(
@@ -148,6 +155,12 @@ if __name__ in {"__main__", "__mp_main__"}:
             reload=False,
             show=False,
             storage_secret=settings.STORAGE_SECRET,
+            # ── Connection tuning ──────────────────────────────────
+            # Render's proxy drops idle websockets. The default 3s
+            # reconnect window is too short for a mobile network to
+            # re-handshake, so the client shows "connection lost" and
+            # the user retries uploads that actually succeeded.
+            reconnect_timeout=15.0,
         )
         _log("ui.run() returned cleanly")
     except Exception as e:
