@@ -26,6 +26,7 @@ except Exception as e:
 try:
     from utils.logging_config import setup_logging
     from ui.theme import apply_theme
+    from ui.client_js import install as install_client_js
     from ui.pages.home import render as render_home
     from ui.pages.results import render as render_results
     from ui.pages.history import render as render_history
@@ -62,9 +63,7 @@ class _TimerNoiseFilter(_logging.Filter):
 
 _logging.getLogger("nicegui").addFilter(_TimerNoiseFilter())
 
-app.add_static_files("/assets", "assets")
-apply_theme()
-_log("theme applied")
+
 
 
 @app.get("/healthz")
@@ -103,7 +102,10 @@ def test_gemini():
         )
 
 
-@ui.page("/")
+@ui.pageapp.add_static_files("/assets", "assets")
+apply_theme()
+install_client_js()
+_log("theme applied")("/")
 def index():
     render_home()
 
