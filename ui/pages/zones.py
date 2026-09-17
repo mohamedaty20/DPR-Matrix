@@ -144,9 +144,6 @@ def _derive_zones(rpt) -> list[dict]:
     return out
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# CSS
-# ═══════════════════════════════════════════════════════════════════════════
 _ZONES_CSS = """
 <style>
 .dpr-toolbar {
@@ -628,8 +625,6 @@ def render():
             )
             return
 
-        # Dimensions of the PNG returned by render_pie (must match
-        # core/scatter_map.py).
         W_PX, H_PX = 1400.0, 950.0
 
         app_state: dict = {
@@ -647,9 +642,6 @@ def render():
             "search_status": None,
         }
 
-        # ═══════════════════════════════════════════════════════════
-        # Toolbar
-        # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-toolbar"):
             with ui.element("div").classes("dpr-search-wrap"):
                 refs["search_input"] = ui.input(
@@ -685,9 +677,6 @@ def render():
             '</div>'
         )
 
-        # ═══════════════════════════════════════════════════════════
-        # Chart + side panel
-        # ═══════════════════════════════════════════════════════════
         with ui.element("div").classes("dpr-map-wrap"):
             with ui.element("div").classes("dpr-viewport") as viewport:
                 refs["viewport"] = viewport
@@ -730,9 +719,6 @@ def render():
                     _render_selected(app_state["selection"])
                 detail_panel()
 
-        # ═══════════════════════════════════════════════════════════
-        # Callbacks
-        # ═══════════════════════════════════════════════════════════
         def _refresh_clear_btn() -> None:
             if app_state["selection"] is None:
                 refs["clear_btn"].set_visibility(False)
@@ -915,15 +901,9 @@ def render():
         except Exception:
             pass
 
-        # ═══════════════════════════════════════════════════════════
-        # Initial render
-        # ═══════════════════════════════════════════════════════════
         map_view()
         _apply_zoom(1.0)
 
-        # ═══════════════════════════════════════════════════════════
-        # Bullet summary
-        # ═══════════════════════════════════════════════════════════
         pts = _build_points(zones, rpt)
         overview_html = "".join(f"<li>{b}</li>" for b in pts["overview"])
         watch_html = "".join(f'<li class="{c}">{b}</li>' for c, b in pts["watch"])
