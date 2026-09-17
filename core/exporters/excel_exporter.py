@@ -1,8 +1,16 @@
 """Excel export — one sheet per section, auto-filter, freeze panes,
-green bold headers, black data."""
+orange bold headers, black data.
+
+Current pass — item 7 fix:
+  The provenance dict (nested {skilled: [...], helpers: [...], ...}) and
+  the sources list were being written straight into the sheet, which
+  crashed openpyxl with
+      "Cannot convert {...} to Excel".
+  Both are now excluded from every sheet, and any remaining dict/list
+  value is safely stringified before being written.
+"""
 from __future__ import annotations
 import io
-import re
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -20,15 +28,36 @@ _H2_FONT    = Font(bold=True, color=GREEN_RGB, size=12)
 _HEAD_FONT  = Font(bold=True, color=GREEN_RGB, size=10)
 _BODY_FONT  = Font(color=BLACK_RGB, size=10)
 
-_HEAD_FILL = PatternFill("solid", fgColor="E8F5E9")
+_HEAD_FILL = PatternFill("solid", fgColor="FDEBD8")
 _THIN = Side(border_style="thin", color="CCCCCC")
 _BORDER = Border(left=_THIN, right=_THIN, top=_THIN, bottom=_THIN)
 
+# Item 7 — never write these columns into a sheet.
+_HIDDEN_COLUMNS = {"sources", "provenance"}
+
 
 def _fmt(d) -> str:
+    """Stringify a value for a cell. Dicts → 'k: v · k: v'. Lists → 'a, b'."""
+    if d is None:
+        return ""
     if isinstance(d, dict):
-        return " · ".join(f"{k}: {v}" for k, v in d.items() if v not in (None, ""))
+        return " · ".join(
+            f"{k}: {_fmt(v)}" for k, v in d.items() if v not in (None, "")
+        )
+    if isinstance(d, (list, tuple, set)):
+        return ", ".join(_fmt(x) for x in d)
     return str(d)
+
+
+def _safe_cell_value(v):
+    """Whatever we hand openpyxl must be a scalar string/number/bool/None."""
+    if v is None:
+        return ""
+    if isinstance(v, (dict, list, tuple, set)):
+        return _fmt(v)
+    if isinstance(v, (str, int, float, bool)):
+        return v
+    return str(v)
 
 
 def _autosize(ws, max_width=60):
@@ -49,8 +78,9 @@ def _write_header_sheet(ws, report: AggregatedReport):
     if report.project_name:
         ws.cell(r, 1, report.project_name).font = _H2_FONT; r += 1
     r += 1
-    for k, v in [("Date", report.report_date), ("Location", report.site_location),
-                 ("Prepared By", report.prepared_by), ("Weather", report.weather)]:
+    for k, v in [("Date", report.report_date),
+                 ("Location", report.site_location),
+                 ("Prepared By", report.prepared_by)]:
         ws.cell(r, 1, k).font = _HEAD_FONT
         ws.cell(r, 2, v or "—").font = _BODY_FONT
         r += 1
@@ -69,24 +99,29 @@ def _write_list_sheet(ws, title: str, items: list):
         _autosize(ws); return
 
     if isinstance(items[0], dict):
-        keys = []
+        # Item 7 — skip provenance / sources; keep everything else.
+        keys: list[str] = []
         for it in items:
             for k in it.keys():
+                if k in _HIDDEN_COLUMNS:
+                    continue
                 if k not in keys:
                     keys.append(k)
+
         for ci, k in enumerate(keys, start=1):
             c = ws.cell(r, ci, k.replace("_", " ").title())
             c.font = _HEAD_FONT; c.fill = _HEAD_FILL; c.border = _BORDER
         r += 1
+
         for it in items:
             for ci, k in enumerate(keys, start=1):
-                v = it.get(k, "") or ""
-                if isinstance(v, list):
-                    v = ", ".join(str(x) for x in v)
-                c = ws.cell(r, ci, v)
+                raw = it.get(k, "")
+                value = _safe_cell_value(raw)
+                c = ws.cell(r, ci, value)
                 c.font = _BODY_FONT; c.border = _BORDER
                 c.alignment = Alignment(wrap_text=True, vertical="top")
             r += 1
+
         last_col = get_column_letter(len(keys))
         ws.auto_filter.ref = f"A{r - len(items) - 1}:{last_col}{r - 1}"
         ws.freeze_panes = ws.cell(r - len(items), 1)
@@ -95,7 +130,7 @@ def _write_list_sheet(ws, title: str, items: list):
         ws.cell(r, 1).fill = _HEAD_FILL
         r += 1
         for it in items:
-            ws.cell(r, 1, str(it)).font = _BODY_FONT
+            ws.cell(r, 1, _safe_cell_value(it)).font = _BODY_FONT
             r += 1
         ws.freeze_panes = "A3"
     _autosize(ws)
