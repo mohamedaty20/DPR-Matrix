@@ -1,4 +1,12 @@
-"""Home — centered upload, custom drop zone, animated AI-processing state."""
+"""Home — centered upload, custom drop zone, animated AI-processing state.
+
+Current pass:
+  - Item 5: drop-zone hover borders/backgrounds removed everywhere; the
+    Aggregate/Cancel action bar loses its bordered card and gains a
+    crystal-glass button look. Adds an animated "flow lines" banner
+    (professional SaaS-style) above the drop zone.
+  - Item 6: "Please wait" + blinking rectangle preserved from Phase 1.
+"""
 from __future__ import annotations
 
 from html import escape
@@ -46,31 +54,56 @@ _HOME_CSS = """
   justify-content: center;
 }
 
-/* ── Custom drop zone — no borders, centered text + plus ───────── */
+/* ═══════════════════════════════════════════════════════════════
+   Item 5 — Animated "flow lines" banner (professional SaaS look)
+   ═══════════════════════════════════════════════════════════════ */
+.dpr-flow-banner {
+  width: 100%;
+  max-width: 780px;
+  margin: 4px auto 0 auto;
+  height: 70px;
+  position: relative;
+  overflow: hidden;
+  pointer-events: none;
+}
+.dpr-flow-banner svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   Drop zone — NO borders, NO hover effects (item 5)
+   ═══════════════════════════════════════════════════════════════ */
 .dpr-drop-wrap {
   width: 100%;
   display: flex;
   justify-content: center;
 }
 
-.dpr-drop-visual {
+.dpr-drop-visual,
+.dpr-drop-visual:hover,
+.dpr-drop-visual:active,
+.dpr-drop-visual:focus,
+.dpr-drop-visual:focus-within,
+.dpr-drop-visual:focus-visible {
   width: 100%;
   max-width: 640px;
-  padding: 56px 24px 48px 24px;
+  padding: 50px 24px 44px 24px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 28px;
+  gap: 24px;
   cursor: pointer;
   user-select: none;
-  border: none !important;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
   border-radius: 14px;
-  transition: background-color .18s ease;
   -webkit-tap-highlight-color: transparent;
 }
-.dpr-drop-visual:hover { background: rgba(242, 116, 12, 0.035); }
-.dpr-drop-visual:active { background: rgba(242, 116, 12, 0.06); }
 
 .dpr-drop-text {
   color: #e8e8ea;
@@ -83,7 +116,10 @@ _HOME_CSS = """
   margin: 0;
 }
 
-.dpr-drop-plus {
+.dpr-drop-plus,
+.dpr-drop-plus:hover,
+.dpr-drop-plus:active,
+.dpr-drop-plus:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -92,11 +128,28 @@ _HOME_CSS = """
   font-size: clamp(56px, 9vw, 84px);
   font-weight: 300;
   line-height: 0.85;
-  transition: transform .18s ease, text-shadow .2s ease;
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
+  transition: text-shadow .25s ease;
 }
 .dpr-drop-visual:hover .dpr-drop-plus {
-  transform: scale(1.06);
-  text-shadow: 0 0 26px rgba(242, 116, 12, 0.42);
+  text-shadow: 0 0 32px rgba(242, 116, 12, 0.55);
+}
+
+/* Kill every possible outline Quasar might paint on the hidden uploader */
+.dpr-drop-input,
+.dpr-drop-input *,
+.dpr-drop-wrap .q-uploader,
+.dpr-drop-wrap .q-uploader:hover,
+.dpr-drop-wrap .q-uploader:focus,
+.dpr-drop-wrap .q-uploader:focus-within,
+.dpr-drop-wrap .q-uploader * {
+  background: transparent !important;
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
 }
 
 /* The real Quasar uploader stays off-screen; we drive it via pickFiles() */
@@ -167,21 +220,107 @@ _HOME_CSS = """
   text-align: center; padding: 14px 0; font-style: italic;
 }
 
-/* ── Action bar (centered) ─────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   Action bar — NO outer border (item 5)
+   ═══════════════════════════════════════════════════════════════ */
 .dpr-action-bar {
-  display: flex; flex-wrap: wrap; gap: 10px;
+  display: flex; flex-wrap: wrap; gap: 14px;
   align-items: center; justify-content: center;
-  padding: 14px 18px;
-  background: rgba(242, 116, 12, 0.04);
-  border: 1px solid rgba(242, 116, 12, 0.20);
-  border-radius: 12px; width: 100%; max-width: 640px;
+  padding: 6px 4px;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0;
+  width: 100%; max-width: 640px;
 }
 .dpr-action-bar-info {
   flex: 1 1 100%; color: #85858c; font-size: 11.5px;
-  text-align: center; margin-bottom: 4px;
+  text-align: center; margin-bottom: 6px;
 }
 .dpr-action-bar-info b { color: #e8e8ea; font-weight: 600; }
 .dpr-action-bar-info .err { color: #ff4d6a; font-weight: 700; }
+
+/* ── Crystal glass buttons (item 5) ─────────────────────────────── */
+.dpr-btn-crystal.q-btn {
+  background: linear-gradient(135deg,
+    rgba(242,116,12,0.18) 0%,
+    rgba(242,116,12,0.05) 50%,
+    rgba(242,116,12,0.12) 100%) !important;
+  border: 0 !important;
+  color: #F2740C !important;
+  font-weight: 700 !important;
+  font-size: 12px !important;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  min-height: 42px !important;
+  height: 42px !important;
+  padding: 0 26px !important;
+  border-radius: 12px !important;
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.10) inset,
+    0 10px 32px rgba(242,116,12,0.18),
+    0 2px 6px rgba(0,0,0,0.35) !important;
+  position: relative;
+  overflow: hidden;
+  transition: transform .18s ease, box-shadow .2s ease, background .2s ease;
+}
+.dpr-btn-crystal.q-btn::after {
+  content: "";
+  position: absolute;
+  top: 0; left: -120%;
+  width: 60%; height: 100%;
+  background: linear-gradient(90deg,
+    transparent, rgba(255,255,255,0.18), transparent);
+  transform: skewX(-18deg);
+  transition: left .55s ease;
+  pointer-events: none;
+}
+.dpr-btn-crystal.q-btn:hover::after {
+  left: 130%;
+}
+.dpr-btn-crystal.q-btn:hover {
+  background: linear-gradient(135deg,
+    rgba(242,116,12,0.28) 0%,
+    rgba(242,116,12,0.10) 50%,
+    rgba(242,116,12,0.20) 100%) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.16) inset,
+    0 16px 42px rgba(242,116,12,0.28),
+    0 2px 6px rgba(0,0,0,0.35) !important;
+  transform: translateY(-1px);
+}
+.dpr-btn-crystal.q-btn:active {
+  transform: translateY(0);
+}
+.dpr-btn-crystal.q-btn:disabled,
+.dpr-btn-crystal.q-btn.q-btn--disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+}
+
+.dpr-btn-crystal-danger.q-btn {
+  background: linear-gradient(135deg,
+    rgba(255,77,106,0.16) 0%,
+    rgba(255,77,106,0.04) 50%,
+    rgba(255,77,106,0.10) 100%) !important;
+  color: #ff4d6a !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.08) inset,
+    0 10px 28px rgba(255,77,106,0.14),
+    0 2px 6px rgba(0,0,0,0.35) !important;
+}
+.dpr-btn-crystal-danger.q-btn:hover {
+  background: linear-gradient(135deg,
+    rgba(255,77,106,0.26) 0%,
+    rgba(255,77,106,0.10) 50%,
+    rgba(255,77,106,0.18) 100%) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.14) inset,
+    0 16px 40px rgba(255,77,106,0.24),
+    0 2px 6px rgba(0,0,0,0.35) !important;
+  transform: translateY(-1px);
+}
 
 /* ── Footer disclaimer ────────────────────────────────────────── */
 .dpr-home-footer {
@@ -264,15 +403,71 @@ _HOME_CSS = """
 
 @media (max-width: 640px) {
   .dpr-home-main    { gap: 16px; }
-  .dpr-drop-visual  { padding: 40px 14px 34px 14px; gap: 20px; }
+  .dpr-drop-visual  { padding: 34px 14px 30px 14px; gap: 18px; }
   .dpr-drop-plus    { font-size: 60px; }
+  .dpr-flow-banner  { height: 50px; }
   .dpr-processing   { padding: 32px 16px 24px 16px; }
   .dpr-proc-title-row { gap: 12px; }
   .dpr-proc-blink   { width: 20px; height: 10px; }
   .dpr-q-row        { padding: 8px 10px; gap: 8px; font-size: 11.5px; }
   .dpr-home-footer  { font-size: 11px; margin-top: 28px; }
+  .dpr-btn-crystal.q-btn { min-height: 40px !important; height: 40px !important;
+                           padding: 0 20px !important; font-size: 11.5px !important; }
 }
 </style>
+"""
+
+
+_FLOW_BANNER = """
+<div class="dpr-flow-banner" aria-hidden="true">
+  <svg viewBox="0 0 1200 100" preserveAspectRatio="none"
+       xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="dprPulseA" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%"   stop-color="rgba(242,116,12,0)"/>
+        <stop offset="50%"  stop-color="rgba(242,116,12,0.95)"/>
+        <stop offset="100%" stop-color="rgba(242,116,12,0)"/>
+      </linearGradient>
+      <linearGradient id="dprPulseB" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%"   stop-color="rgba(255,176,32,0)"/>
+        <stop offset="50%"  stop-color="rgba(255,176,32,0.85)"/>
+        <stop offset="100%" stop-color="rgba(255,176,32,0)"/>
+      </linearGradient>
+    </defs>
+
+    <!-- Base hairlines -->
+    <line x1="0" y1="20" x2="1200" y2="20"
+          stroke="rgba(242,116,12,0.08)" stroke-width="1"/>
+    <line x1="0" y1="50" x2="1200" y2="50"
+          stroke="rgba(242,116,12,0.12)" stroke-width="1"/>
+    <line x1="0" y1="80" x2="1200" y2="80"
+          stroke="rgba(242,116,12,0.08)" stroke-width="1"/>
+
+    <!-- Moving pulses along the hairlines -->
+    <rect y="18" width="260" height="4" fill="url(#dprPulseA)" opacity="0.9">
+      <animate attributeName="x" from="-260" to="1200"
+               dur="5.2s" repeatCount="indefinite"/>
+    </rect>
+    <rect y="48" width="360" height="4" fill="url(#dprPulseB)" opacity="0.85">
+      <animate attributeName="x" from="-360" to="1200"
+               dur="7.0s" begin="0.9s" repeatCount="indefinite"/>
+    </rect>
+    <rect y="78" width="220" height="4" fill="url(#dprPulseA)" opacity="0.75">
+      <animate attributeName="x" from="-220" to="1200"
+               dur="6.1s" begin="1.8s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- Secondary reverse pulses for depth -->
+    <rect y="34" width="180" height="3" fill="url(#dprPulseB)" opacity="0.55">
+      <animate attributeName="x" from="1200" to="-180"
+               dur="8.5s" begin="0.4s" repeatCount="indefinite"/>
+    </rect>
+    <rect y="64" width="220" height="3" fill="url(#dprPulseA)" opacity="0.5">
+      <animate attributeName="x" from="1200" to="-220"
+               dur="9.4s" begin="1.5s" repeatCount="indefinite"/>
+    </rect>
+  </svg>
+</div>
 """
 
 
@@ -486,6 +681,9 @@ def _body() -> None:
         ui.html(_PROCESSING_HTML)
 
     with main_ui:
+        # Animated flow-lines banner (item 5)
+        ui.html(_FLOW_BANNER)
+
         with ui.element("div").classes("dpr-drop-wrap"):
             with ui.element("div").classes("dpr-drop-visual").on(
                 "click", _open_picker
@@ -683,11 +881,11 @@ def _body() -> None:
                     f"Aggregate {n} file{'s' if n != 1 else ''}"
                     if n else "Aggregate",
                     on_click=run_aggregate,
-                ).classes("dpr-btn-primary")
+                ).classes("dpr-btn-crystal")
                 cancel_btn = ui.button(
                     "Cancel",
                     on_click=lambda: state.request_cancel(),
-                ).classes("dpr-btn-danger")
+                ).classes("dpr-btn-crystal dpr-btn-crystal-danger")
                 cancel_btn.disable()
 
         queue_panel()
