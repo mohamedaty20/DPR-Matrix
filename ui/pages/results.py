@@ -1,11 +1,4 @@
-"""Results — report dashboard.
-
-Current pass:
-  - Item 4: Overview tab > Activity Breakdown now shows PLACES per
-    activity (distinct building/floor/zone tuples), not crew headcounts.
-    The panel total is the number of distinct places on site, and each
-    bar's percentage is that activity's place count / total places.
-"""
+"""Results — report dashboard."""
 from __future__ import annotations
 
 import base64
@@ -50,7 +43,7 @@ _REPORT_CSS = """
   margin-right: auto !important;
 }
 
-/* ── Drawer toggle — professional arrow ────────────────────────── */
+/* ── Drawer toggle ────────────────────────────────────────────── */
 .dpr-drawer-toggle {
   position: fixed;
   top: 62px;
@@ -82,7 +75,6 @@ _REPORT_CSS = """
   .dpr-drawer-toggle { left: 248px; }
 }
 
-/* ── Drawer shell ──────────────────────────────────────────────── */
 .dpr-drawer {
   position: fixed;
   top: 0;
@@ -202,7 +194,6 @@ input.q-field__native, textarea.q-field__native {
   margin-bottom: 4px;
 }
 
-/* ── Report header ─────────────────────────────────────────────── */
 .dpr-report-main {
   display: flex;
   flex-direction: column;
@@ -262,15 +253,31 @@ input.q-field__native, textarea.q-field__native {
   background: rgba(242,116,12,0.04) !important;
 }
 
-/* ── Tab row with Zones button ─────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════════════
+   FIX: Tabs row layout. The Zones board button was floating on top
+   of the tab strip because the tabs container wasn't being
+   constrained. Now the row is a grid: tabs get 1fr (scrollable),
+   button gets auto (fixed width). On very narrow screens the button
+   wraps to its own line instead of overlapping.
+   ═══════════════════════════════════════════════════════════════ */
 .dpr-tabs-row {
-  display: flex;
-  align-items: stretch;
-  gap: 8px;
-  flex-wrap: wrap;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   width: 100%;
+  flex-wrap: wrap;
 }
-.dpr-tabs { flex: 1; min-width: 0; }
+.dpr-tabs {
+  min-width: 0 !important;
+  width: 100%;
+  overflow: hidden;
+}
+.dpr-tabs .q-tabs__content {
+  overflow-x: auto !important;
+  flex-wrap: nowrap !important;
+  -webkit-overflow-scrolling: touch;
+}
 .dpr-tabs .q-tab {
   min-height: 36px !important;
   padding: 0 12px !important;
@@ -278,6 +285,7 @@ input.q-field__native, textarea.q-field__native {
   letter-spacing: 0 !important;
   font-size: 11.5px !important;
   font-weight: 600 !important;
+  flex: 0 0 auto !important;
 }
 .dpr-tabs .q-tab__label { font-size: 11.5px !important; }
 .dpr-tabs .q-tab__icon { font-size: 16px !important; }
@@ -291,10 +299,80 @@ input.q-field__native, textarea.q-field__native {
   color: #c8c8cc !important;
   background: transparent !important;
   border-radius: 8px !important;
+  white-space: nowrap;
 }
 .dpr-zones-tab.q-btn:hover {
   border-color: #F2740C !important;
   color: #F2740C !important;
+}
+@media (max-width: 520px) {
+  .dpr-tabs-row {
+    grid-template-columns: 1fr;
+  }
+  .dpr-zones-tab.q-btn {
+    justify-self: start;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FIX: Building × Activity Matrix column headers.
+   The activity name is on line 1; "working floors" is on line 2
+   under it. The base theme forces `white-space: nowrap` on the
+   header cell — we override that here and use flex to stack the
+   two lines cleanly. Columns have a fixed width so the grid
+   overflows and the parent scrolls horizontally on mobile.
+   ═══════════════════════════════════════════════════════════════ */
+.dpr-matrix {
+  display: grid;
+  gap: 2px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+}
+.dpr-matrix-head {
+  white-space: normal !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+  min-height: 48px;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  line-height: 1.15;
+  padding: 8px 4px 6px 4px !important;
+  text-align: center;
+  font-size: 10px !important;
+}
+.dpr-matrix-head-name {
+  display: block;
+  color: #e8e8ea !important;
+  font-weight: 700 !important;
+  font-size: 10px !important;
+  letter-spacing: 0.02em;
+  text-align: center;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+  max-width: 100%;
+}
+.dpr-matrix-head-sub {
+  display: block;
+  color: #4f4f56 !important;
+  font-weight: 500 !important;
+  font-size: 8px !important;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  line-height: 1.2;
+  margin-top: 1px;
+}
+.dpr-matrix-row-head {
+  position: sticky;
+  left: 0;
+  background: #050506;
+  z-index: 2;
+  padding-right: 6px !important;
 }
 
 /* ── Summary cards ─────────────────────────────────────────────── */
@@ -351,7 +429,6 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-bldg-link:hover { color: #ffb020; border-bottom-color: #ffb020; }
 
-/* ── Interactive flag cards ────────────────────────────────────── */
 .dpr-flag-card {
   display: flex;
   align-items: center;
@@ -400,7 +477,6 @@ input.q-field__native, textarea.q-field__native {
 }
 .dpr-flag-action:hover { color: #F2740C; }
 
-/* ── Modal card look ───────────────────────────────────────────── */
 .q-dialog .q-card, .q-dialog .dpr-card {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%) !important;
   border: 1px solid rgba(242,116,12,0.35) !important;
@@ -504,9 +580,6 @@ def _download_row():
             ui.button("TXT", on_click=_download_txt).classes("dpr-download-btn")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Sync helpers
-# ═══════════════════════════════════════════════════════════════════════════
 _MIRROR_TO_REPORT = {
     "project_name": "project_name",
     "location":     "site_location",
@@ -580,9 +653,6 @@ def _persist_and_reload(rpt, message: str = "Saved") -> None:
         ui.notify(f"Save failed: {ex}", color="red", position="top")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Project details drawer body
-# ═══════════════════════════════════════════════════════════════════════════
 def _render_project_details_body() -> None:
     pd = state.project_details()
 
@@ -675,9 +745,6 @@ def _render_project_details_body() -> None:
     ).style("margin-top: 12px;")
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Report header
-# ═══════════════════════════════════════════════════════════════════════════
 def _render_report_header(rpt) -> None:
     with ui.element("div").classes("dpr-report-header"):
         ui.html('<div style="color:#F2740C;font-size:10.5px;'
@@ -710,9 +777,6 @@ def _render_report_header(rpt) -> None:
         )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Conflict modal
-# ═══════════════════════════════════════════════════════════════════════════
 def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
     picks: dict[int, str] = {i: "keep" for i in range(len(conflicts))}
 
@@ -801,9 +865,6 @@ def _open_conflict_modal(rpt, conflicts: list[dict]) -> None:
     dlg.open()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Unify headers modal
-# ═══════════════════════════════════════════════════════════════════════════
 def _open_unify_headers_modal(rpt) -> None:
     from collections import Counter
     activity_counts: Counter = Counter()
@@ -879,9 +940,6 @@ def _open_unify_headers_modal(rpt) -> None:
     dlg.open()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Building detail modal
-# ═══════════════════════════════════════════════════════════════════════════
 def _open_building_detail_modal(rpt, building_row: dict) -> None:
     bldg = str(building_row.get("building", "—"))
     rows = [
@@ -972,9 +1030,6 @@ def _open_building_detail_modal(rpt, building_row: dict) -> None:
     dlg.open()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Summary tab
-# ═══════════════════════════════════════════════════════════════════════════
 def _summary_tab(rpt):
     s = SUM.compute(rpt)
 
@@ -1171,19 +1226,7 @@ def _render_decision_flags(rpt, s: dict) -> None:
                     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Overview tab — item 4 FIX
-# ═══════════════════════════════════════════════════════════════════════════
 def _overview_tab(rpt, mp, act, prog):
-    """Overview tab.
-
-    Item 4 of the current request:
-      Activity Breakdown must show the number of PLACES each activity
-      happened in (distinct building/floor/zone tuples), plus that
-      activity's share of total distinct places on site. It must NOT
-      show crew headcounts.
-    """
-    # Distinct places per activity + global distinct places on site
     act_places: dict[str, set] = {}
     all_places: set = set()
     for r in rpt.work_progress:
@@ -1246,9 +1289,6 @@ def _overview_tab(rpt, mp, act, prog):
             )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Layout tab
-# ═══════════════════════════════════════════════════════════════════════════
 def _layout_tab(rpt):
     matx = A.activity_matrix(rpt, top_n_acts=6)
     zones = A.zone_density(rpt)
@@ -1266,9 +1306,6 @@ def _layout_tab(rpt):
                 top_list([(f"Zone {z}", c) for z, c in zones])
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Quality tab
-# ═══════════════════════════════════════════════════════════════════════════
 def _quality_tab(rpt, q):
     with ui.element("div").classes("dpr-grid"):
         with panel("Data Quality Breakdown",
@@ -1320,9 +1357,6 @@ def _quality_tab(rpt, q):
             ui.html(html)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Detailed tab
-# ═══════════════════════════════════════════════════════════════════════════
 def _detailed_tab(rpt):
     mats = A.materials_top(rpt, 20)
     equip = A.equipment_status(rpt)
@@ -1352,9 +1386,6 @@ def _detailed_tab(rpt):
         report_preview()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Production panel
-# ═══════════════════════════════════════════════════════════════════════════
 def _render_production_panel(rpt):
     acts = sorted({
         (r.get("activity") or "").strip()
@@ -1496,9 +1527,6 @@ def _render_production_panel(rpt):
         _refresh_chart()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Main render
-# ═══════════════════════════════════════════════════════════════════════════
 def render():
     rpt = state.report()
 
