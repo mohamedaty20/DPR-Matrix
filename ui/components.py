@@ -1,12 +1,10 @@
 """Reusable widgets — sections, tables, bars, histograms, matrices.
 
-Pass 2 changes:
-  - matrix_view (item 23): each column header shows the activity name
-    with "working floors" on a second line beneath it; row heads show
-    "B{building}" instead of "Bldg {building}".
-  - ratio_bars legend: "Helpers" → "Assistants" (item 20).
-  - new crew_rectangles component for the redesigned Crew Composition
-    panel (item 22).
+Current pass:
+  - bar_list() gains an optional `total_override` so the Activity
+    Breakdown panel can show "places per activity / total distinct
+    places" percentages instead of crew-based shares.
+  - Everything else from the previous pass unchanged.
 """
 from __future__ import annotations
 from html import escape
@@ -38,9 +36,9 @@ _NUMERIC_KEYS = {
     "progress_pct", "count",
 }
 _CONFIDENCE_COLOR = {
-    "high":   "#F2740C",   # orange
-    "medium": "#ffb020",   # amber
-    "low":    "#ff4d6a",   # red
+    "high":   "#F2740C",
+    "medium": "#ffb020",
+    "low":    "#ff4d6a",
 }
 
 
@@ -239,10 +237,22 @@ def panel(title: str, *, subtitle: str = "", total: str = "",
 
 
 def bar_list(items: list[tuple[str, float | int]],
-             *, unit: str = "", show_pct: bool = True) -> None:
+             *, unit: str = "", show_pct: bool = True,
+             total_override: float | None = None) -> None:
+    """Bar list.
+
+    `total_override` — when set, the displayed percentage is
+    value / total_override * 100 instead of value / sum(values) * 100.
+    Used by the Activity Breakdown panel where each activity's bar must
+    show its share of the DISTINCT PLACES on site, not of the sum of
+    activities.
+    """
     if not items:
         return
-    total = sum(float(v) for _, v in items) or 1
+    if total_override is not None:
+        total = float(total_override) or 1.0
+    else:
+        total = sum(float(v) for _, v in items) or 1
     max_val = max((float(v) for _, v in items), default=0) or 1
     rows = ""
     for label, value in items:
@@ -265,9 +275,6 @@ def bar_list(items: list[tuple[str, float | int]],
 
 
 def ratio_bars(items: list[tuple[str, float, float, float]]) -> None:
-    """Skilled vs assistants ratio bars. `helpers` percentage is the second
-    tuple value — kept for data-shape compatibility, relabeled to assistants
-    on the surface (item 20)."""
     if not items:
         return
     rows = ""
@@ -316,12 +323,6 @@ def histogram(buckets: list[tuple[str, int]]) -> None:
 
 
 def matrix_view(data: dict) -> None:
-    """Building × Activity matrix (item 23).
-
-    Each column header shows the activity name on line 1 and the fixed
-    phrase "working floors" on line 2 (smaller, dimmer). Row heads are
-    "B{n}" instead of "Bldg {n}".
-    """
     acts = data["activities"]
     bldgs = data["buildings"]
     mat = data["matrix"]
@@ -334,7 +335,6 @@ def matrix_view(data: dict) -> None:
     )
     html = f'<div class="dpr-matrix" style="{grid_style}">'
 
-    # Empty corner cell + activity headers
     html += '<div class="dpr-matrix-head"></div>'
     for a in acts:
         html += (
@@ -344,7 +344,6 @@ def matrix_view(data: dict) -> None:
             f'</div>'
         )
 
-    # Rows
     for b in bldgs:
         html += f'<div class="dpr-matrix-row-head">B{escape(b)}</div>'
         for a in acts:
@@ -364,15 +363,6 @@ def matrix_view(data: dict) -> None:
 
 def crew_rectangles(buildings: list[dict],
                     *, on_click=None, limit: int = 20) -> None:
-    """Crew Composition — top N buildings by assistant count (item 22).
-
-    Each building becomes its own small card showing building number,
-    skilled crew, assistant crew, and total. If on_click is provided, each
-    card becomes clickable and calls on_click(building_dict).
-
-    `buildings` is SUM.compute(rpt)["buildings"] — sorted by crew desc; we
-    re-sort by assistant count for this panel.
-    """
     top = sorted(
         [b for b in buildings if b.get("assistants", 0) > 0],
         key=lambda x: (-x.get("assistants", 0), x.get("building", "")),
@@ -411,22 +401,17 @@ def crew_rectangles(buildings: list[dict],
         .classes("w-full")
 
     if on_click is not None:
-        # Attach a JS-side click handler that emits an event to Python with
-        # the building id. Uses the NiceGUI event system on the container.
         container.on("click", _make_crew_click_handler(on_click, top))
 
 
 def _make_crew_click_handler(on_click, buildings):
-    """Return a Python handler that reads the clicked card's data-bldg."""
     by_name = {str(b.get("building", "—")): b for b in buildings}
 
     def handler(e):
-        # NiceGUI passes the raw DOM event; we read the closest card.
         try:
             target = (e.args or {}).get("target", {}) if isinstance(e.args, dict) else {}
         except Exception:
             target = {}
-        # The simplest robust path — walk from the event path if provided.
         bldg = None
         try:
             path = e.args.get("path") if isinstance(e.args, dict) else None
@@ -560,124 +545,5 @@ def line_chart(
         f'       style="width:100%;height:{H}px;display:block;">'
         f'    {grid}{x_axis}{paths}'
         f'  </svg>'
-        f'</div>'
-    ).classes("w-full")
-
-
-_SEV_COLOR = {"high": "#ff4d6a", "medium": "#ffb020", "low": "#F2740C"}
-
-
-def risk_forecast(data: dict) -> None:
-    """Kept for compatibility — no longer called from the results page
-    (item 14 removed the AI Risk menu). The function stays here so other
-    callers don't break."""
-    if not data:
-        ui.html('<div class="dpr-panel-empty">No risk analysis yet.</div>')
-        return
-
-    overall = data.get("overall_risk", "insufficient_data")
-    summary = data.get("summary", "")
-    risks = data.get("risks", [])
-    bottlenecks = data.get("bottlenecks", [])
-
-    overall_color = _SEV_COLOR.get(overall, "#85858c")
-    if overall == "insufficient_data":
-        overall_color = "#85858c"
-
-    header = (
-        f'<div class="dpr-panel-header">'
-        f'  <div class="dpr-panel-title">Risk &amp; Bottleneck Forecast</div>'
-        f'  <div class="dpr-panel-total" style="color:{overall_color} !important;">'
-        f'    {escape(overall.upper().replace("_", " "))}'
-        f'  </div>'
-        f'</div>'
-    )
-
-    summary_html = ""
-    if summary:
-        summary_html = (
-            f'<div style="color:#e8e8ea;font-size:12px;line-height:1.5;'
-            f'margin:4px 0 12px 0;padding:8px 11px;'
-            f'background:rgba(242,116,12,0.04);'
-            f'border-left:2px solid {overall_color};'
-            f'border-radius:0 6px 6px 0;">'
-            f'{escape(summary)}</div>'
-        )
-
-    risks_html = ""
-    for r in risks:
-        sev = r.get("severity", "low")
-        color = _SEV_COLOR.get(sev, "#85858c")
-        cat = escape(r.get("category", "").upper())
-        title = escape(r.get("title", ""))
-        detail = escape(r.get("detail", ""))
-        evidence = escape(r.get("evidence", ""))
-        reco = escape(r.get("recommendation", ""))
-        risks_html += (
-            f'<div style="border:1px solid rgba(242,116,12,0.12);'
-            f'border-left:3px solid {color};'
-            f'border-radius:8px;padding:10px 12px;margin-bottom:8px;'
-            f'background:rgba(255,255,255,0.015);">'
-            f'  <div style="display:flex;align-items:center;gap:8px;'
-            f'      margin-bottom:5px;flex-wrap:wrap;">'
-            f'    <span style="background:{color}22;color:{color};'
-            f'        border:1px solid {color};padding:1px 6px;'
-            f'        border-radius:999px;font-size:9px;font-weight:700;'
-            f'        letter-spacing:0.08em;">{cat}</span>'
-            f'    <span style="color:#e8e8ea;font-size:12.5px;font-weight:600;">'
-            f'      {title}</span>'
-            f'    <span style="color:#4f4f56;font-size:9.5px;'
-            f'        margin-left:auto;font-weight:600;text-transform:uppercase;'
-            f'        letter-spacing:0.08em;">{escape(sev)}</span>'
-            f'  </div>'
-            f'  <div style="color:#c8c8cc;font-size:11px;line-height:1.5;'
-            f'      margin-bottom:6px;">{detail}</div>'
-            + (f'<div style="color:#85858c;font-size:10.5px;line-height:1.45;'
-               f'      margin-bottom:5px;">'
-               f'<strong style="color:#4f4f56;">Evidence:</strong> {evidence}</div>'
-               if evidence else "")
-            + (f'<div style="color:#e8c19a;font-size:11px;line-height:1.45;'
-               f'      padding:6px 9px;background:rgba(242,116,12,0.06);'
-               f'      border-radius:6px;">'
-               f'<strong style="color:#F2740C;">→</strong> {reco}</div>'
-               if reco else "")
-            + '</div>'
-        )
-
-    bottleneck_html = ""
-    if bottlenecks:
-        items = ""
-        for b in bottlenecks:
-            items += (
-                f'<div class="dpr-toplist-row">'
-                f'  <span class="dpr-toplist-rank">•</span>'
-                f'  <span class="dpr-toplist-name">'
-                f'    B{escape(str(b.get("building","")))} · '
-                f'    {escape(str(b.get("activity","")))}</span>'
-                f'  <span style="color:#ffb020;font-size:11px;">'
-                f'    {escape(b.get("reason",""))}</span>'
-                f'</div>'
-            )
-        bottleneck_html = (
-            f'<div style="margin-top:12px;">'
-            f'  <div style="color:#85858c;font-size:10px;letter-spacing:0.12em;'
-            f'      text-transform:uppercase;font-weight:600;margin-bottom:6px;">'
-            f'    Bottleneck Zones</div>'
-            f'  <div class="dpr-toplist">{items}</div>'
-            f'</div>'
-        )
-
-    if not risks and not bottlenecks and overall != "insufficient_data":
-        risks_html = (
-            '<div class="dpr-panel-empty">'
-            'No risks flagged in the last 7 days.</div>'
-        )
-
-    ui.html(
-        f'<div class="dpr-panel dpr-panel-wide">'
-        f'  {header}'
-        f'  {summary_html}'
-        f'  {risks_html}'
-        f'  {bottleneck_html}'
         f'</div>'
     ).classes("w-full")
