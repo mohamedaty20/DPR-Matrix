@@ -547,6 +547,42 @@ a:hover { color: var(--dpr-primary-dim) !important; }
   background: #0c0c0f; border: 1px dashed var(--dpr-border-hover);
   border-radius: var(--dpr-radius); }
 .dpr-zone-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* ═══════════════════════════════════════════════════════════════
+   Phase 1 — Fluid typography & mobile breakpoint
+   (appended; overrides are additive — nothing above is removed)
+   ═══════════════════════════════════════════════════════════════ */
+
+.dpr-app-title     { font-size: clamp(20px, 3.6vw, 26px) !important; }
+.dpr-app-subtitle  { font-size: clamp(12px, 1.7vw, 13px) !important; }
+.dpr-page-title    { font-size: clamp(18px, 3.0vw, 22px) !important; }
+.dpr-page-subtitle { font-size: clamp(12px, 1.7vw, 13px) !important; }
+.dpr-stat-value    { font-size: clamp(22px, 3.6vw, 28px); }
+.dpr-panel-title   { font-size: clamp(12px, 1.7vw, 13px); }
+.dpr-panel-total   { font-size: clamp(14px, 2.2vw, 16px); }
+.dpr-meta-value    { font-size: clamp(12px, 1.7vw, 13px); }
+.dpr-queue-name    { font-size: clamp(12px, 1.7vw, 13px) !important; }
+
+@media (max-width: 640px) {
+  .dpr-shell-topbar { padding: 0 12px; }
+  .dpr-topbar-crumb { font-size: 11px; }
+  .dpr-page-header  { padding: 14px 14px 6px 14px; }
+  .dpr-page-body    { padding: 10px 12px 28px 12px; gap: 12px; }
+  .dpr-page-title   { font-size: 18px !important; }
+  .dpr-page-subtitle { font-size: 12px !important; }
+  .dpr-stat-grid    { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .dpr-stat         { padding: 12px 12px; }
+  .dpr-stat-value   { font-size: 20px; }
+  .dpr-stat-label   { font-size: 10px; }
+  .dpr-bar-row      { grid-template-columns: 86px 1fr 60px; gap: 8px;
+                      font-size: 11.5px; }
+  .dpr-grid         { grid-template-columns: 1fr; gap: 10px; }
+  .dpr-panel        { padding: 14px 14px; }
+  .dpr-meta-strip   { grid-template-columns: repeat(2, 1fr); }
+  .dpr-download-bar { padding: 12px 14px; }
+  .dpr-histogram    { height: 130px; }
+  .dpr-toplist-name { font-size: 12px; }
+}
 </style>
 """
 
