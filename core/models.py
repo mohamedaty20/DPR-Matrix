@@ -41,9 +41,12 @@ class AggregatedReport:
     conflicts:    list[dict] = dc_field(default_factory=list)
     notes:        list[str] = dc_field(default_factory=list)
 
-    # ---- Pass 10: source reconciliation ----
-    # One entry per merged work-progress key, with raw values from each source.
+    # ---- Reconciliation ----
     reconciliation: list[dict] = dc_field(default_factory=list)
+
+    # ---- Project meta (company, contractor, consultant, logo, etc.) ----
+    # Free-form dict, saved with the report in Turso, read by PDF export.
+    project_meta: dict = dc_field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return asdict(self)
