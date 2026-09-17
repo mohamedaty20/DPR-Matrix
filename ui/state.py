@@ -16,6 +16,18 @@ _CANCEL = threading.Event()
 _EVENTS: list[tuple[str, dict]] = []
 _EVENTS_LOCK = threading.Lock()
 
+_PROJECT_DEFAULTS = {
+    "project_name": "",
+    "location": "",
+    "company_name": "",
+    "contractor": "",
+    "consultant": "",
+    "weather": "",
+    "shift": "",
+    "logo_token": "",
+    "logo_mime": "",
+}
+
 
 def _bucket() -> dict:
     store = app.storage.user
@@ -26,11 +38,16 @@ def _bucket() -> dict:
             "zones": {},
             "s_curve_targets": {},
             "risk_cache": {},
+            "project_details": dict(_PROJECT_DEFAULTS),
         }
     store[_KEY].setdefault("queue", [])
     store[_KEY].setdefault("zones", {})
     store[_KEY].setdefault("s_curve_targets", {})
     store[_KEY].setdefault("risk_cache", {})
+    store[_KEY].setdefault("project_details", dict(_PROJECT_DEFAULTS))
+    pd = store[_KEY]["project_details"]
+    for k, v in _PROJECT_DEFAULTS.items():
+        pd.setdefault(k, v)
     return store[_KEY]
 
 
@@ -178,9 +195,50 @@ def clear_risk_cache() -> None:
     _bucket()["risk_cache"] = {}
 
 
+# ── Project details ───────────────────────────────────────────────────────
+def project_details() -> dict:
+    return _bucket()["project_details"]
+
+def set_project_detail(key: str, value: str) -> None:
+    if key in _PROJECT_DEFAULTS:
+        project_details()[key] = value or ""
+
+def set_project_logo(data: bytes, mime: str) -> None:
+    token = uuid.uuid4().hex
+    _FILE_BYTES[token] = data
+    pd = project_details()
+    old = pd.get("logo_token")
+    if old and old in _FILE_BYTES:
+        _FILE_BYTES.pop(old, None)
+    pd["logo_token"] = token
+    pd["logo_mime"] = mime or "image/png"
+
+def get_project_logo() -> tuple[bytes, str] | None:
+    pd = project_details()
+    tok = pd.get("logo_token")
+    if not tok:
+        return None
+    data = _FILE_BYTES.get(tok)
+    if not data:
+        return None
+    return data, pd.get("logo_mime", "image/png")
+
+def clear_project_logo() -> None:
+    pd = project_details()
+    old = pd.get("logo_token")
+    if old and old in _FILE_BYTES:
+        _FILE_BYTES.pop(old, None)
+    pd["logo_token"] = ""
+    pd["logo_mime"] = ""
+
+def reset_project_details() -> None:
+    _bucket()["project_details"] = dict(_PROJECT_DEFAULTS)
+
+
 # ── Reset ─────────────────────────────────────────────────────────────────
 def reset() -> None:
-    """Clear docs / report / logs / events. Keeps queue, zones, targets."""
+    """Clear docs / report / logs / events. Keeps queue, zones, targets,
+    project details and logo."""
     _bucket().update({
         "docs": [], "report": None, "report_id": None, "logs": [],
     })
