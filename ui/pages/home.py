@@ -1,4 +1,4 @@
-"""Home — compact upload, queue, animated AI-processing state."""
+"""Home — centered upload, custom drop zone, animated AI-processing state."""
 from __future__ import annotations
 
 from html import escape
@@ -20,68 +20,135 @@ _AGGREGATE_TIMEOUT_SEC = 600.0
 
 _HOME_CSS = """
 <style>
-/* ── Native uploader, restyled as a drop zone ──────────────────── */
-.dpr-drop-wrap .q-uploader {
-  background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%) !important;
-  border: 1.5px dashed rgba(242,116,12,0.35) !important;
-  border-radius: 12px !important;
-  box-shadow: none !important;
-  width: 100% !important;
-  transition: border-color .15s ease, background-color .15s ease;
+/* ── Home container — everything centered ──────────────────────── */
+.dpr-page-header { align-items: center !important; text-align: center !important; }
+.dpr-page-title  { text-align: center !important; }
+.dpr-page-subtitle {
+  text-align: center !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
-.dpr-drop-wrap .q-uploader:hover {
-  border-color: rgba(242,116,12,0.65) !important;
-  background: rgba(242,116,12,0.02) !important;
+
+.dpr-home-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  width: 100%;
+  max-width: 780px;
+  margin: 0 auto;
+  text-align: center;
 }
-.dpr-drop-wrap .q-uploader__header {
-  background: transparent !important;
-  color: #e8e8ea !important;
-  padding: 16px 18px !important;
+
+/* ── Custom drop zone — no borders, centered text + plus ───────── */
+.dpr-drop-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.dpr-drop-visual {
+  width: 100%;
+  max-width: 640px;
+  padding: 56px 24px 48px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  cursor: pointer;
+  user-select: none;
   border: none !important;
-  min-height: 0 !important;
-  cursor: pointer !important;
+  border-radius: 14px;
+  transition: background-color .18s ease;
+  -webkit-tap-highlight-color: transparent;
 }
-.dpr-drop-wrap .q-uploader__title {
-  color: #e8e8ea !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
+.dpr-drop-visual:hover {
+  background: rgba(242, 116, 12, 0.035);
 }
-.dpr-drop-wrap .q-uploader__subtitle {
-  color: #85858c !important;
-  font-size: 11px !important;
+.dpr-drop-visual:active {
+  background: rgba(242, 116, 12, 0.06);
 }
-.dpr-drop-wrap .q-uploader__list { display: none !important; }
-.dpr-drop-wrap .q-btn {
-  background: transparent !important;
-  color: #F2740C !important;
-  border: 1px solid rgba(242,116,12,0.4) !important;
-  border-radius: 8px !important;
-  min-height: 30px !important;
-  padding: 0 12px !important;
-  font-size: 11.5px !important;
-  font-weight: 600 !important;
+
+.dpr-drop-text {
+  color: #e8e8ea;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(20px, 3.4vw, 30px);
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  line-height: 1.35;
+  text-align: center;
+  margin: 0;
 }
-.dpr-drop-wrap .q-btn:hover {
-  background: rgba(242,116,12,0.08) !important;
+
+.dpr-drop-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #F2740C;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(56px, 9vw, 84px);
+  font-weight: 300;
+  line-height: 0.85;
+  transition: transform .18s ease, text-shadow .2s ease;
+}
+.dpr-drop-visual:hover .dpr-drop-plus {
+  transform: scale(1.06);
+  text-shadow: 0 0 26px rgba(242, 116, 12, 0.42);
+}
+
+/* The real Quasar uploader is present in the DOM but off-screen.
+   We drive it via uploader.run_method('pickFiles'). */
+.dpr-drop-input {
+  position: fixed !important;
+  top: -10000px !important;
+  left: -10000px !important;
+  width: 1px !important;
+  height: 1px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+/* ── Hint line under the drop zone ─────────────────────────────── */
+.dpr-home-hint {
+  color: #4f4f56;
+  font-size: 11.5px;
+  letter-spacing: 0.02em;
+  text-align: center;
+  line-height: 1.6;
+  margin-top: -6px;
 }
 
 /* ── Queue list ────────────────────────────────────────────────── */
-.dpr-q-list { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; }
+.dpr-q-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+  width: 100%;
+  max-width: 640px;
+}
 .dpr-q-row {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
   align-items: center;
   gap: 12px;
-  padding: 7px 12px;
+  padding: 9px 14px;
   background: #0c0c0f;
-  border: 1px solid rgba(242,116,12,0.14);
+  border: 1px solid rgba(242, 116, 12, 0.14);
   border-radius: 8px;
   font-size: 12px;
-  min-height: 36px;
+  min-height: 40px;
+  text-align: left;
 }
 .dpr-q-name {
-  color: #e8e8ea; font-weight: 500;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  color: #e8e8ea;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 .dpr-q-size { color: #4f4f56; font-size: 11px; white-space: nowrap; }
 .dpr-q-status {
@@ -95,10 +162,12 @@ _HOME_CSS = """
 .dpr-q-done       { color: #F2740C; border-color: rgba(242,116,12,0.4); }
 .dpr-q-error      { color: #ff4d6a; border-color: rgba(255,77,106,0.4); }
 .dpr-q-remove.q-btn {
-  min-height: 22px !important; height: 22px !important;
-  width: 22px !important; min-width: 22px !important;
-  padding: 0 !important; border-radius: 6px !important;
-  border-color: transparent !important; color: #4f4f56 !important;
+  min-height: 24px !important; height: 24px !important;
+  width: 24px !important; min-width: 24px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  border-color: transparent !important;
+  color: #4f4f56 !important;
   background: transparent !important;
 }
 .dpr-q-remove.q-btn:hover {
@@ -111,56 +180,105 @@ _HOME_CSS = """
   text-align: center; padding: 14px 0; font-style: italic;
 }
 
-/* ── Action bar ────────────────────────────────────────────────── */
+/* ── Action bar (centered) ─────────────────────────────────────── */
 .dpr-action-bar {
-  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-  padding: 12px 16px;
-  background: rgba(242,116,12,0.04);
-  border: 1px solid rgba(242,116,12,0.20);
-  border-radius: 12px; margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 18px;
+  background: rgba(242, 116, 12, 0.04);
+  border: 1px solid rgba(242, 116, 12, 0.20);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 640px;
 }
 .dpr-action-bar-info {
-  flex: 1; color: #85858c; font-size: 11.5px; min-width: 140px;
+  flex: 1 1 100%;
+  color: #85858c;
+  font-size: 11.5px;
+  text-align: center;
+  margin-bottom: 4px;
 }
 .dpr-action-bar-info b { color: #e8e8ea; font-weight: 600; }
 .dpr-action-bar-info .err { color: #ff4d6a; font-weight: 700; }
 
+/* ── Footer disclaimer ────────────────────────────────────────── */
+.dpr-home-footer {
+  width: 100%;
+  max-width: 640px;
+  margin: 40px auto 0 auto;
+  padding: 18px 8px 0 8px;
+  text-align: center;
+  color: #6a6a72;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.65;
+  border-top: 1px solid rgba(242, 116, 12, 0.10);
+}
+
 /* ═══════════════════════════════════════════════════════════════
-   AI processing state
+   AI processing state — big "Please wait" + blinking rectangle
    ═══════════════════════════════════════════════════════════════ */
 .dpr-processing {
   background: linear-gradient(180deg, #0c0c0f 0%, #08080a 100%);
-  border: 1px solid rgba(242,116,12,0.28);
+  border: 1px solid rgba(242, 116, 12, 0.28);
   border-radius: 16px;
   padding: 44px 30px 34px 30px;
   text-align: center;
   width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
   animation: dpr-fade-in .4s ease;
 }
 @keyframes dpr-fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.dpr-proc-title {
-  color: #F2740C;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
-  margin: 0 0 8px 0;
-  animation: dpr-proc-pulse 2s ease-in-out infinite;
-}
-@keyframes dpr-proc-pulse {
-  0%, 100% { opacity: 1;   text-shadow: 0 0 0   rgba(242,116,12,0); }
-  50%      { opacity: 0.75; text-shadow: 0 0 18px rgba(242,116,12,0.5); }
-}
 .dpr-proc-sub {
   color: #c8c8cc;
   font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-size: clamp(12px, 1.7vw, 13.5px);
   font-weight: 500;
   letter-spacing: 0.06em;
-  margin-bottom: 6px;
+  margin: 0 0 20px 0;
+}
+.dpr-proc-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin: 0 0 4px 0;
+  flex-wrap: wrap;
+}
+.dpr-proc-title {
+  color: #F2740C;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(26px, 4.6vw, 40px);
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  animation: dpr-proc-pulse 2.4s ease-in-out infinite;
+}
+@keyframes dpr-proc-pulse {
+  0%, 100% { opacity: 1;    text-shadow: 0 0 0  rgba(242, 116, 12, 0); }
+  50%      { opacity: 0.82; text-shadow: 0 0 24px rgba(242, 116, 12, 0.5); }
+}
+.dpr-proc-blink {
+  display: inline-block;
+  width: 26px;
+  height: 13px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.85);
+  animation: dpr-blink 2.6s ease-in-out infinite;
+}
+@keyframes dpr-blink {
+  0%, 100% { opacity: 0.06; }
+  50%      { opacity: 0.55; }
 }
 .dpr-proc-dots::after {
   content: "";
@@ -182,16 +300,28 @@ _HOME_CSS = """
   font-size: 11px;
   letter-spacing: 0.10em;
   text-transform: uppercase;
-  margin-top: 24px;
+  margin-top: 26px;
 }
 .dpr-proc-graphic {
   max-width: 820px;
-  margin: 24px auto 0 auto;
+  margin: 28px auto 0 auto;
 }
 .dpr-proc-graphic svg {
   width: 100%;
   height: auto;
   display: block;
+}
+
+/* ── Small-phone refinements ──────────────────────────────────── */
+@media (max-width: 640px) {
+  .dpr-home-main    { gap: 16px; }
+  .dpr-drop-visual  { padding: 40px 14px 34px 14px; gap: 20px; }
+  .dpr-drop-plus    { font-size: 60px; }
+  .dpr-processing   { padding: 32px 16px 24px 16px; }
+  .dpr-proc-title-row { gap: 12px; }
+  .dpr-proc-blink   { width: 20px; height: 10px; }
+  .dpr-q-row        { padding: 8px 10px; gap: 8px; font-size: 11.5px; }
+  .dpr-home-footer  { font-size: 11px; margin-top: 28px; }
 }
 </style>
 """
@@ -199,9 +329,13 @@ _HOME_CSS = """
 
 _PROCESSING_HTML = """
 <div class="dpr-processing">
-  <div class="dpr-proc-title">PLEASE WAIT</div>
   <div class="dpr-proc-sub">
     AI is processing your files<span class="dpr-proc-dots"></span>
+  </div>
+
+  <div class="dpr-proc-title-row">
+    <span class="dpr-proc-title">Please wait</span>
+    <span class="dpr-proc-blink"></span>
   </div>
 
   <div class="dpr-proc-graphic">
@@ -234,42 +368,36 @@ _PROCESSING_HTML = """
       <!-- Buildings — animated outline draw + subtle fill rise -->
       <g stroke="#F2740C" stroke-width="1.4" stroke-linejoin="round"
          fill="url(#dprFillGrad)">
-        <!-- Building 1 -->
         <rect x="60" y="160" width="70" height="102"
               pathLength="100" stroke-dasharray="100" stroke-dashoffset="100">
           <animate attributeName="stroke-dashoffset"
                    values="100;0;0;100" keyTimes="0;0.35;0.75;1"
                    dur="6s" repeatCount="indefinite"/>
         </rect>
-        <!-- Building 2 -->
         <rect x="180" y="105" width="90" height="157"
               pathLength="100" stroke-dasharray="100" stroke-dashoffset="100">
           <animate attributeName="stroke-dashoffset"
                    values="100;0;0;100" keyTimes="0;0.35;0.75;1"
                    dur="6s" begin="0.4s" repeatCount="indefinite"/>
         </rect>
-        <!-- Building 3 -->
         <rect x="315" y="135" width="80" height="127"
               pathLength="100" stroke-dasharray="100" stroke-dashoffset="100">
           <animate attributeName="stroke-dashoffset"
                    values="100;0;0;100" keyTimes="0;0.35;0.75;1"
                    dur="6s" begin="0.8s" repeatCount="indefinite"/>
         </rect>
-        <!-- Building 4 — tallest -->
         <rect x="440" y="70" width="105" height="192"
               pathLength="100" stroke-dasharray="100" stroke-dashoffset="100">
           <animate attributeName="stroke-dashoffset"
                    values="100;0;0;100" keyTimes="0;0.35;0.75;1"
                    dur="6s" begin="1.2s" repeatCount="indefinite"/>
         </rect>
-        <!-- Building 5 -->
         <rect x="590" y="150" width="85" height="112"
               pathLength="100" stroke-dasharray="100" stroke-dashoffset="100">
           <animate attributeName="stroke-dashoffset"
                    values="100;0;0;100" keyTimes="0;0.35;0.75;1"
                    dur="6s" begin="1.6s" repeatCount="indefinite"/>
         </rect>
-        <!-- Building 6 -->
         <rect x="700" y="185" width="65" height="77"
               pathLength="100" stroke-dasharray="100" stroke-dashoffset="100">
           <animate attributeName="stroke-dashoffset"
@@ -337,6 +465,14 @@ _PROCESSING_HTML = """
 """
 
 
+_FOOTER_HTML = (
+    '<div class="dpr-home-footer">'
+    'This tool is using engineering trained AI module but results '
+    'should be re-checked before decision making.'
+    '</div>'
+)
+
+
 def render() -> None:
     with page_shell(
         active="home",
@@ -355,18 +491,28 @@ def _body() -> None:
         filename = e.name
         try:
             if len(state.queue_files()) >= settings.MAX_FILES:
-                raise DPRMatrixError(
-                    f"Queue is at the {settings.MAX_FILES}-file limit."
+                ui.notify(
+                    f"You've reached the {settings.MAX_FILES}-file limit "
+                    f"for this project. Please remove a file from the "
+                    f"queue before adding more.",
+                    color="orange",
+                    position="top",
+                    group="upload-limit",
+                    timeout=5000,
                 )
+                return
+
             data = e.content.read()
             validate_upload(filename, data)
 
+            # Deduplicate accidental re-uploads
             for existing in state.queue_files():
                 if (existing["name"] == filename
                         and existing["size"] == len(data)
                         and existing["status"] in ("queued", "extracting", "done")):
-                    ui.notify(f"{filename} already queued",
-                              color="orange", position="top")
+                    ui.notify(f"{filename} is already queued",
+                              color="orange", position="top",
+                              group="upload-dup")
                     return
 
             state.enqueue(filename, data, e.type or "")
@@ -375,16 +521,37 @@ def _body() -> None:
             _refresh_all()
         except DPRMatrixError as ex:
             state.log(f"[err] {filename}: {ex}")
-            ui.notify(str(ex), color="red", position="top")
+            ui.notify(str(ex), color="red", position="top", group="upload-err")
         except Exception as ex:
             state.log(f"[err] {filename}: {type(ex).__name__}: {ex}")
-            ui.notify(f"Upload failed: {ex}", color="red", position="top")
+            ui.notify(f"Upload failed: {ex}", color="red",
+                      position="top", group="upload-err")
 
     # ═══════════════════════════════════════════════════════════════
-    # Main UI (hidden when processing)
+    # Hidden uploader + custom centered drop-zone visual
+    # ═══════════════════════════════════════════════════════════════
+    uploader = ui.upload(
+        on_upload=handle_upload,
+        multiple=True,
+        auto_upload=True,
+        max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
+    ).props(
+        f'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt '
+        f'no-thumbnails'
+    ).classes("dpr-drop-input")
+
+    def _open_picker() -> None:
+        try:
+            uploader.run_method("pickFiles")
+        except Exception as ex:
+            state.log(f"[err] pickFiles failed: {type(ex).__name__}: {ex}")
+            ui.notify("Could not open file picker — please tap again.",
+                      color="red", position="top")
+
+    # ═══════════════════════════════════════════════════════════════
+    # Main UI (hidden when processing) + loading UI
     # ═══════════════════════════════════════════════════════════════
     main_ui = ui.element("div").classes("dpr-home-main")
-    main_ui.style("display: flex; flex-direction: column; gap: 14px; width: 100%;")
 
     loading_ui = ui.element("div")
     loading_ui.style("display: none; width: 100%;")
@@ -392,42 +559,41 @@ def _body() -> None:
         ui.html(_PROCESSING_HTML)
 
     with main_ui:
-        # ── Drop zone (native uploader) ─────────────────────────────
-        with ui.element("div").classes("dpr-drop-wrap w-full"):
-            ui.upload(
-                label="Drop site reports here — or click to browse",
-                on_upload=handle_upload,
-                multiple=True,
-                auto_upload=True,
-                max_file_size=settings.MAX_UPLOAD_MB * 1024 * 1024,
-            ).props(
-                f'accept=.pdf,.xlsx,.xls,.png,.jpg,.jpeg,.txt '
-                f'flat bordered no-thumbnails'
-            ).classes("w-full")
+        # ── Custom drop-zone visual ─────────────────────────────────
+        with ui.element("div").classes("dpr-drop-wrap"):
+            with ui.element("div").classes("dpr-drop-visual").on(
+                "click", _open_picker
+            ):
+                ui.html(
+                    '<div class="dpr-drop-text">Drop site reports here</div>'
+                )
+                ui.html('<div class="dpr-drop-plus">+</div>')
 
+        # ── Hint line ───────────────────────────────────────────────
         ui.html(
-            f'<div style="color:#4f4f56;font-size:11px;'
-            f'text-align:center;margin-top:-6px;">'
+            f'<div class="dpr-home-hint">'
             f'Up to {settings.MAX_FILES} files · '
             f'{settings.MAX_UPLOAD_MB} MB each · '
             f'PDF · XLSX · XLS · PNG · JPG · TXT'
             f'</div>'
         )
 
-        # ── Queue ───────────────────────────────────────────────────
+        # ── Queue panel ─────────────────────────────────────────────
         @ui.refreshable
         def queue_panel() -> None:
             q = state.queue_files()
             if not q:
                 ui.html('<div class="dpr-q-empty">'
-                        'Queue is empty — drop files above.</div>')
+                        'Queue is empty — click the + above to add files.'
+                        '</div>')
                 return
             with ui.element("div").classes("dpr-q-list"):
                 for f in q:
                     status = f.get("status", "queued")
                     with ui.element("div").classes("dpr-q-row"):
                         ui.html(
-                            f'<span class="dpr-q-name">{escape(f["name"])}</span>'
+                            f'<span class="dpr-q-name">'
+                            f'{escape(f["name"])}</span>'
                         )
                         size_kb = f["size"] / 1024
                         size_txt = (
@@ -454,15 +620,14 @@ def _body() -> None:
 
         # ── Aggregate job ───────────────────────────────────────────
         running = {"active": False}
-        btns = {"run": None, "cancel": None}
 
         def _show_processing() -> None:
-            main_ui.style("display: none;")
-            loading_ui.style("display: block;")
+            main_ui.set_visibility(False)
+            loading_ui.set_visibility(True)
 
         def _hide_processing() -> None:
-            main_ui.style("display: flex; flex-direction: column; gap: 14px; width: 100%;")
-            loading_ui.style("display: none;")
+            main_ui.set_visibility(True)
+            loading_ui.set_visibility(False)
 
         async def run_aggregate() -> None:
             if running["active"]:
@@ -491,22 +656,32 @@ def _body() -> None:
                     try:
                         data = state.get_bytes(f["token"])
                         if data is None:
-                            raise DPRMatrixError(f"Bytes for '{f['name']}' missing")
-                        doc = await run.io_bound(route, data, f["name"], f["mime"])
+                            raise DPRMatrixError(
+                                f"Bytes for '{f['name']}' missing"
+                            )
+                        doc = await run.io_bound(
+                            route, data, f["name"], f["mime"]
+                        )
                         doc.meta["bytes"] = len(data)
                         docs.append(doc)
-                        state.log(f"[text] ok · {f['name']} → {len(doc.raw_text)} chars")
+                        state.log(
+                            f"[text] ok · {f['name']} → "
+                            f"{len(doc.raw_text)} chars"
+                        )
                     except Exception as ex:
                         state.set_status(f["token"], "error", str(ex))
-                        state.log(f"[text] fail · {f['name']}: "
-                                  f"{type(ex).__name__}: {ex}")
+                        state.log(
+                            f"[text] fail · {f['name']}: "
+                            f"{type(ex).__name__}: {ex}"
+                        )
 
                 if state.is_cancelled():
                     state.log("[cancel] aborted before merge")
                     return
                 if not docs:
                     state.log("[err] no documents extracted")
-                    ui.notify("Nothing to aggregate", color="red", position="top")
+                    ui.notify("Nothing to aggregate",
+                              color="red", position="top")
                     return
 
                 state.set_docs(docs)
@@ -528,7 +703,8 @@ def _body() -> None:
 
                 state.set_report(report)
                 state.log(
-                    f"[ok] report ready · {len(report.work_progress)} work rows · "
+                    f"[ok] report ready · "
+                    f"{len(report.work_progress)} work rows · "
                     f"{len(report.conflicts)} conflict(s)"
                 )
 
@@ -542,7 +718,9 @@ def _body() -> None:
                         }
                         for d in docs
                     ]
-                    rid = await run.io_bound(save_report, report, uploads_meta)
+                    rid = await run.io_bound(
+                        save_report, report, uploads_meta
+                    )
                     state.set_report_id(rid)
                     state.log(f"[db] saved as report #{rid}")
                     await run.io_bound(cleanup_old_reports, 90)
@@ -553,6 +731,7 @@ def _body() -> None:
                     if f["status"] != "error":
                         state.set_status(f["token"], "done")
 
+                # Item 9 — take the user to the report tab automatically.
                 ui.navigate.to("/results")
 
             except Exception as ex:
@@ -563,7 +742,7 @@ def _body() -> None:
                 _hide_processing()
                 _refresh_all()
 
-        # ── Action bar ──────────────────────────────────────────────
+        # ── Action bar (centered) ───────────────────────────────────
         @ui.refreshable
         def action_bar() -> None:
             q = state.queue_files()
@@ -579,19 +758,22 @@ def _body() -> None:
 
             with ui.element("div").classes("dpr-action-bar"):
                 ui.html(f'<div class="dpr-action-bar-info">{info_html}</div>')
-                btns["run"] = ui.button(
+                ui.button(
                     f"Aggregate {n} file{'s' if n != 1 else ''}"
                     if n else "Aggregate",
                     on_click=run_aggregate,
                 ).classes("dpr-btn-primary")
-                btns["cancel"] = ui.button(
+                cancel_btn = ui.button(
                     "Cancel",
                     on_click=lambda: state.request_cancel(),
                 ).classes("dpr-btn-danger")
-                btns["cancel"].disable()
+                cancel_btn.disable()
 
         queue_panel()
         action_bar()
+
+        # ── Footer disclaimer (item 7) ──────────────────────────────
+        ui.html(_FOOTER_HTML)
 
     # ═══════════════════════════════════════════════════════════════
     # Event drain — silent; only updates queue badge states
@@ -610,7 +792,6 @@ def _body() -> None:
                         state.set_status(f["token"], "error", err)
                 changed = True
         if changed and running["active"] is False:
-            # Only refresh when we're not already in the processing view
             _refresh_all()
 
     ui.timer(0.5, _drain_events)
